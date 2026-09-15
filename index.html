@@ -216,7 +216,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v6.063</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v6.064</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -7566,12 +7566,19 @@ var TILESCALE=[0.20,0.42,0.30,0.42,0.30,0.62,0.52,0.40,0.60,1.0,0.62,0.22,1.0,1.
    image looks upside down; on the model it is the right way up. */
 function skinFaceTile(g,female){
   var S=128, i;
-  /* the same base grain as TILE.SKIN, so a face blends into its own neck */
+  /* The same grain as TILE.SKIN, but at the same APPARENT size. The neck
+     samples that tile through the procedural projection, where 128px
+     covers a metre, so its speckles are roughly 1-3cm across. This cell
+     is stretched over one 23cm head instead, so identical pixel sizes
+     would come out four times finer and the jaw would show a seam where
+     two scales meet -- which is what still read as a detached head.
+     Scaled up to match what the neck shows. */
   g.fillStyle="#DCDCDC"; g.fillRect(0,0,S,S);
-  for(i=0;i<600;i++){
+  for(i=0;i<170;i++){
     var n=(Math.random()*66-40)|0;
     g.fillStyle="rgba("+(210+n)+","+(210+n)+","+(210+n)+",0.5)";
-    g.beginPath(); g.arc(Math.random()*S,Math.random()*S,1+Math.random()*3,0,6.2832); g.fill();
+    g.beginPath();
+    g.arc(Math.random()*S,Math.random()*S,2+Math.random()*7,0,6.2832); g.fill();
   }
   function P(u,v){ return [u*S, v*S]; }
   function blob(u,v,ru,rv,col){
