@@ -216,7 +216,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v6.064</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v6.065</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -9579,7 +9579,11 @@ function glbMarkSex(){
     var c=GLB_IMPORTED[n]; if(!c)return;
     c._female=/woman|_f($|[^a-z])|female|girl|wife|maid/i.test(n);
     /* only rigged figures have a head to refine, and only once */
-    if(c.skins&&c.skins.length){ try{ glbSubdivideHead(c,2); }catch(e){} }
+    /* One level, not two. Two gave sixteen times the face density and took
+       a figure from 6k triangles to 24k; ten of those rebuilt every frame
+       is what dropped the frame rate. One level is four times the density,
+       at a quarter of the cost, and the texture carries the rest. */
+    if(c.skins&&c.skins.length){ try{ glbSubdivideHead(c,1); }catch(e){} }
   });
 }
 function glbForRole(role,gender,uid){
