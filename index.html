@@ -216,7 +216,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v6.057</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v6.058</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -11552,7 +11552,8 @@ function updateCam(){
   CB.p=[px,py,pz];
   if(GLOK&&tcw&&tch){
     glEye=[px,py,pz];
-    var proj=m4persp(0.86,tcw/tch,0.5,300);
+    /* near plane must sit inside the closest the camera can get (0.45) */
+    var proj=m4persp(0.86,tcw/tch,0.06,300);
     var view=m4look([px,py,pz],[tx,ty,tz],[0,1,0]);
     glVP=m4mul(proj,view);glInvVP=m4inv(glVP);
   }
@@ -15504,7 +15505,10 @@ function roomTapAction(x,z){
 }
 /* eight units was as close as you could get, which is a long way back for
    a game where the figures now have faces */
-function camMinDist(){return inRoom()?ROOMS[G.scene].mind:3.2;}
+/* 3.2m was as close as the camera could get, which is a body shot, not a
+   face. 0.45m puts you nose to nose. The near plane below had to come
+   down with it or the head clips away exactly when it fills the frame. */
+function camMinDist(){return inRoom()?Math.min(ROOMS[G.scene].mind,0.45):0.45;}
 function camMaxDist(){return inRoom()?ROOMS[G.scene].maxd:120;}
 function enterRoom(kind,fromId){
   var R=ROOMS[kind]; if(!R)return;
@@ -16440,7 +16444,9 @@ function bindCanvas(){
     } else if(orbit&&String(orbit.id)===String(e.pointerId)){
       var dx=q.x-orbit.x,dy=q.y-orbit.y;
       orbit.moved=Math.abs(dx)+Math.abs(dy);
-      if(orbit.moved>10){cam.az=orbit.az+dx*.008;cam.el=clamp(orbit.el+dy*.005,.30,1.32);}
+      /* the floor on elevation was 0.30, so the camera always looked down
+         on a figure from above; level enough to meet a face is 0.02 */
+      if(orbit.moved>10){cam.az=orbit.az+dx*.008;cam.el=clamp(orbit.el+dy*.005,.02,1.32);}
     }
     if(e.cancelable)e.preventDefault();
   });
