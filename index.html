@@ -216,7 +216,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v6.059</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v6.060</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -9220,41 +9220,41 @@ function glbSubdivideHead(ch,levels){
   GLB_POSE_CACHE={};         /* any cached pose is the wrong shape now */
   return true;
 }
-/* Head UVs, derived rather than authored: take every vertex the Head bone
-   actually drives, express it in that bone's own bind frame, and unwrap
-   cylindrically about the skull's vertical axis with u=0.5 facing forward.
-   Vertices behind the ears fall outside 0..1 and are left untextured, so
-   the paint only lands on the face. */
+/* Head UVs, derived rather than authored.
+   The first attempt wrapped the texture round the skull like a label on
+   a tin: u from atan2 about the vertical axis. That stretches wherever
+   the skull curves away and leaves a seam, which is why the features
+   smeared. A face is close enough to flat to project straight onto from
+   the front, like a slide projector -- u across the head's width, v up
+   its height, no angles involved. Triangles facing sideways or backwards
+   are left out, so nothing gets a stretched copy of the face. */
 function glbHeadUVs(ch){
   if(ch._headUV!==undefined)return ch._headUV;
-  var skin=ch.skins[0], hj=glbHeadJoint(ch);
-  if(hj<0){ ch._headUV=null; return null; }
+  var skin=ch.skins&&ch.skins[0], hj=glbHeadJoint(ch);
+  if(!skin||hj<0){ ch._headUV=null; return null; }
   var prim=ch.meshes[0][0], nv=prim.nv;
-  var node=skin.joints[hj];
-  /* bind-pose position of the head bone, from its inverse bind matrix */
-  var ib=skin.inverseBind, o=hj*16;
-  var hx=-(ib[o]*ib[o+12]+ib[o+1]*ib[o+13]+ib[o+2]*ib[o+14]);
-  var hy=-(ib[o+4]*ib[o+12]+ib[o+5]*ib[o+13]+ib[o+6]*ib[o+14]);
-  var hz=-(ib[o+8]*ib[o+12]+ib[o+9]*ib[o+13]+ib[o+10]*ib[o+14]);
   var uv=new Float32Array(nv*2), on=new Uint8Array(nv);
-  var minY=1e9,maxY=-1e9,any=false;
+  var minX=1e9,maxX=-1e9,minY=1e9,maxY=-1e9,any=false;
   for(var i=0;i<nv;i++){
     var w=0;
     for(var q=0;q<4;q++)if(prim.joint4[i*4+q]===hj)w+=prim.weight4[i*4+q];
     if(w<0.5)continue;
     on[i]=1; any=true;
-    var dy=prim.pos[i*3+1]-hy;
-    if(dy<minY)minY=dy; if(dy>maxY)maxY=dy;
+    var px=prim.pos[i*3], py=prim.pos[i*3+1];
+    if(px<minX)minX=px; if(px>maxX)maxX=px;
+    if(py<minY)minY=py; if(py>maxY)maxY=py;
   }
   if(!any){ ch._headUV=null; return null; }
-  var span=Math.max(maxY-minY,1e-4);
+  /* The head is wider than the face is: the paint is laid out for the
+     front only, so the projection covers the middle of the skull rather
+     than ear to ear, or the eyes end up out on the temples. */
+  var cx=(minX+maxX)/2, halfW=Math.max((maxX-minX)*0.40,1e-4);
+  var spanY=Math.max(maxY-minY,1e-4);
   for(i=0;i<nv;i++){
     if(!on[i])continue;
-    var dx=prim.pos[i*3]-hx, dz=prim.pos[i*3+2]-hz;
-    /* +Z is the model's forward, so atan2(dx,dz)=0 is dead ahead */
-    var ang=Math.atan2(dx,dz);
-    uv[i*2]=0.5+ang/2.0;                    /* wider than pi: face fills the cell */
-    uv[i*2+1]=(prim.pos[i*3+1]-hy-minY)/span;
+    /* mirrored in x: +x is the model's left, and the face is painted as seen */
+    uv[i*2]=0.5-(prim.pos[i*3]-cx)/(2*halfW);
+    uv[i*2+1]=(prim.pos[i*3+1]-minY)/spanY;
   }
   ch._headUV={uv:uv,on:on};
   return ch._headUV;
@@ -9718,11 +9718,17 @@ function glbPlace(op,ch,posed,x,z,gy,hx,hz){
     var a=idx[k],b=idx[k+1],c=idx[k+2];
     var isFace=false;
     if(hu&&hu.on[a]&&hu.on[b]&&hu.on[c]){
-      /* only where all three corners land inside the painted cell, so a
-         triangle never stretches the face around the back of the skull */
-      var ua=hu.uv[a*2],ub=hu.uv[b*2],uc=hu.uv[c*2];
-      if(ua>0.02&&ua<0.98&&ub>0.02&&ub<0.98&&uc>0.02&&uc<0.98&&
-         Math.max(ua,ub,uc)-Math.min(ua,ub,uc)<0.45)isFace=true;
+      /* A projector throws the image onto everything in its path, so the
+         back of the skull would get a mirrored face. Only triangles whose
+         normal actually points forward take it, and only where all three
+         corners fall inside the painted area. */
+      var fz=(N[a*3+2]+N[b*3+2]+N[c*3+2])/3;
+      if(fz>0.30){
+        var ua=hu.uv[a*2],ub=hu.uv[b*2],uc=hu.uv[c*2];
+        var va=hu.uv[a*2+1],vb=hu.uv[b*2+1],vc=hu.uv[c*2+1];
+        if(ua>0.01&&ua<0.99&&ub>0.01&&ub<0.99&&uc>0.01&&uc<0.99&&
+           Math.min(va,vb,vc)>0.10)isFace=true;
+      }
     }
     if(isFace){
       op.push({
