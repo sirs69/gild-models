@@ -216,7 +216,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v6.058</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v6.059</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -9112,6 +9112,114 @@ function glbBuildSkinAtlas(){
   glSkinTex=t;
   return t;
 }
+/* ── head subdivision ────────────────────────────────────────────────
+   The face is only about sixty triangles, so a painted eye gets smeared
+   across a polygon bigger than the eye itself: blurred features and a
+   blocky skull are one problem, not two. Each head triangle is split at
+   its edge midpoints into four, twice over, which is sixteen times the
+   density where it is actually being looked at and nothing extra
+   anywhere else. Midpoints are shared between neighbouring triangles via
+   an edge key, so the mesh stays watertight. */
+function glbSubdivideHead(ch,levels){
+  if(ch._headSub)return true;
+  var skin=ch.skins&&ch.skins[0]; if(!skin)return false;
+  var hj=glbHeadJoint(ch); if(hj<0)return false;
+  var prim=ch.meshes[0][0];
+  var pos=Array.prototype.slice.call(prim.pos);
+  var nrm=Array.prototype.slice.call(prim.nrm);
+  var j4=Array.prototype.slice.call(prim.joint4);
+  var w4=Array.prototype.slice.call(prim.weight4);
+  var vcol=prim.vertColor?Array.prototype.slice.call(prim.vertColor):null;
+  var idx=Array.prototype.slice.call(prim.indices);
+  var tcol=prim.triColor?Array.prototype.slice.call(prim.triColor):null;
+  var ttil=prim.triTile?Array.prototype.slice.call(prim.triTile):null;
+  var nv=prim.nv;
+
+  function headW(i){
+    var w=0;
+    for(var q=0;q<4;q++)if(j4[i*4+q]===hj)w+=w4[i*4+q];
+    return w;
+  }
+  for(var pass=0;pass<(levels||2);pass++){
+    var mid={}, outIdx=[], outT=[], outTile=[];
+    function ekey(a,b){ return (a<b)?(a+"_"+b):(b+"_"+a); }
+    /* Decide the split edges FIRST, from the head triangles alone, then
+       split every triangle according to how many of its edges are in that
+       set. Splitting only the head left a midpoint sitting in the middle
+       of the neighbour's untouched edge -- a T-junction, which opens as a
+       visible crack the moment the neck bends. */
+    var want={};
+    for(var t=0;t*3+2<idx.length;t++){
+      var a=idx[t*3],b=idx[t*3+1],c=idx[t*3+2];
+      if(headW(a)>=0.5&&headW(b)>=0.5&&headW(c)>=0.5){
+        want[ekey(a,b)]=1; want[ekey(b,c)]=1; want[ekey(c,a)]=1;
+      }
+    }
+    function midpoint(a,b){
+      var key=ekey(a,b);
+      var m=mid[key]; if(m!==undefined)return m;
+      m=nv++;
+      for(var q2=0;q2<3;q2++){
+        pos[m*3+q2]=(pos[a*3+q2]+pos[b*3+q2])*0.5;
+        nrm[m*3+q2]=(nrm[a*3+q2]+nrm[b*3+q2])*0.5;
+      }
+      var L=Math.hypot(nrm[m*3],nrm[m*3+1],nrm[m*3+2]);
+      if(L>1e-9){nrm[m*3]/=L;nrm[m*3+1]/=L;nrm[m*3+2]/=L;}
+      /* the heavier corner lends its bones, so a new vertex never picks up
+         a joint neither parent had */
+      var src=(headW(a)>=headW(b))?a:b;
+      for(var q3=0;q3<4;q3++){ j4[m*4+q3]=j4[src*4+q3]; w4[m*4+q3]=w4[src*4+q3]; }
+      if(vcol)for(q2=0;q2<3;q2++)vcol[m*3+q2]=Math.round((vcol[a*3+q2]+vcol[b*3+q2])*0.5);
+      mid[key]=m; return m;
+    }
+    for(t=0;t*3+2<idx.length;t++){
+      var A=idx[t*3],B=idx[t*3+1],C=idx[t*3+2];
+      var tc=tcol?[tcol[t*3],tcol[t*3+1],tcol[t*3+2]]:null;
+      var tl=ttil?ttil[t]:0;
+      function emit(x,y,z){
+        outIdx.push(x,y,z);
+        if(tc)outT.push(tc[0],tc[1],tc[2]);
+        outTile.push(tl);
+      }
+      var eAB=!!want[ekey(A,B)], eBC=!!want[ekey(B,C)], eCA=!!want[ekey(C,A)];
+      var n=(eAB?1:0)+(eBC?1:0)+(eCA?1:0);
+      if(n===0){ emit(A,B,C); continue; }
+      if(n===3){
+        var ab=midpoint(A,B), bc=midpoint(B,C), ca=midpoint(C,A);
+        emit(A,ab,ca); emit(ab,B,bc); emit(ca,bc,C); emit(ab,bc,ca);
+        continue;
+      }
+      /* rotate so the cases below only ever see one shape */
+      if(n===1){
+        if(eBC){ var t1=A;A=B;B=C;C=t1; }
+        else if(eCA){ var t2=A;A=C;C=B;B=t2; }
+        var m1=midpoint(A,B);
+        emit(A,m1,C); emit(m1,B,C);
+        continue;
+      }
+      /* n===2: rotate so the UNSPLIT edge is C-A */
+      if(!eAB){ var t3=A;A=B;B=C;C=t3; }
+      else if(!eBC){ var t4=A;A=C;C=B;B=t4; }
+      var p1=midpoint(A,B), p2=midpoint(B,C);
+      emit(A,p1,p2); emit(p1,B,p2); emit(A,p2,C);
+    }
+    idx=outIdx; if(tcol)tcol=outT; if(ttil)ttil=outTile;
+  }
+  prim.pos=new Float32Array(pos);
+  prim.nrm=new Float32Array(nrm);
+  prim.joint4=new Uint8Array(j4);
+  prim.weight4=new Float32Array(w4);
+  if(vcol)prim.vertColor=new Uint8Array(vcol);
+  prim.indices=(nv>65535)?new Uint32Array(idx):new Uint16Array(idx);
+  if(tcol)prim.triColor=new Uint8Array(tcol);
+  if(ttil)prim.triTile=new Uint8Array(ttil);
+  prim.nv=nv; prim.nt=idx.length/3;
+  ch._headSub=true;
+  ch._headUV=undefined;      /* UVs must be rederived for the new vertices */
+  ch._headJ=undefined;
+  GLB_POSE_CACHE={};         /* any cached pose is the wrong shape now */
+  return true;
+}
 /* Head UVs, derived rather than authored: take every vertex the Head bone
    actually drives, express it in that bone's own bind frame, and unwrap
    cylindrically about the skull's vertical axis with u=0.5 facing forward.
@@ -9487,6 +9595,8 @@ function glbMarkSex(){
   glbImportedNames().forEach(function(n){
     var c=GLB_IMPORTED[n]; if(!c)return;
     c._female=/woman|_f($|[^a-z])|female|girl|wife|maid/i.test(n);
+    /* only rigged figures have a head to refine, and only once */
+    if(c.skins&&c.skins.length){ try{ glbSubdivideHead(c,2); }catch(e){} }
   });
 }
 function glbForRole(role,gender,uid){
