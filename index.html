@@ -216,7 +216,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v6.061</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v6.062</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -7426,7 +7426,6 @@ var FSRC=
 "uniform vec3 uSkyAmb;uniform vec3 uGrdAmb;"+
 "uniform float uFogN;uniform float uFogF;uniform vec3 uEye;"+
 "uniform sampler2D uTex;uniform float uLitWin;"+
-"uniform sampler2D uSkin;"+
 "uniform mat4 uSunVP;uniform sampler2D uShadowMap;uniform float uShadowOn;"+
 "uniform vec3 uTorches[16];uniform float uTorchCount;"+
 "float decodeDepth(vec4 rgba){return dot(rgba,vec4(1.0,1.0/255.0,1.0/65025.0,1.0/16581375.0));}"+
@@ -7439,23 +7438,13 @@ var FSRC=
    shadow map, the fog and the torches, and a head lit differently from
    the body it sits on reads as a detached head. It only sets base and
    the bump terms, then falls through the same lighting as everything. */
-" float skinMode=0.0;"+
 " if(m>4.5){gl_FragColor=vec4(vC,vM.y);return;}"+
 " if(m>2.5&&m<3.5){gl_FragColor=vec4(0.0,0.0,0.0,0.22);return;}"+
 " if(m>3.5){gl_FragColor=vec4(vC,1.0);return;}"+
 " vec3 base=vC;"+
-" if(m>5.5){"+
-"   float sx=mod(vM.w,4.0), sy=floor(vM.w/4.0);"+
-"   vec2 suv=(vec2(sx,sy)+clamp(vec2(vM.y,vM.z),0.004,0.996))*0.25;"+
-"   vec4 sk=texture2D(uSkin,suv);"+
-"   base=mix(vC,sk.rgb,sk.a);"+
 
-"   texGx=0.0; texGy=0.0;"+
-"   hasTex=0.0;"+
-"   skinMode=1.0;"+
-" }"+
 " if(m>1.5){ if(uLitWin>0.5){gl_FragColor=vec4(1.0,0.81,0.48,1.0);return;} }"+
-" if(m>0.5&&m<1.5&&skinMode<0.5){"+
+" if(m>0.5&&m<1.5){"+
 "   float tx=mod(vM.w,4.0), ty=floor(vM.w/4.0);"+
 "   vec2 fr=fract(vec2(vM.y,vM.z));"+
 "   vec2 auv=(vec2(tx,ty)+0.015+fr*0.97)*0.25;"+
@@ -7569,8 +7558,60 @@ function glProgram(vs,fs){
 }
 /* ── procedural texture atlas: 4x4 grid, authored at 128 and rendered
    at 256 so the grain survives being magnified across a wall ── */
-var TILE={GRASS:0,COBBLE:1,EARTH:2,PLASTER:3,TIMBER:4,ROOFTILE:5,THATCH:6,STONE:7,PLANK:8,SKIN:9,SLATE:10,SNOW:11,CLOTH:12};
-var TILESCALE=[0.20,0.42,0.30,0.42,0.30,0.62,0.52,0.40,0.60,1.0,0.62,0.22,1.0];
+var TILE={GRASS:0,COBBLE:1,EARTH:2,PLASTER:3,TIMBER:4,ROOFTILE:5,THATCH:6,STONE:7,PLANK:8,SKIN:9,SLATE:10,SNOW:11,CLOTH:12,FACE_M:13,FACE_F:14};
+var TILESCALE=[0.20,0.42,0.30,0.42,0.30,0.62,0.52,0.40,0.60,1.0,0.62,0.22,1.0,1.0,1.0];
+/* A face, drawn in the same 128x128 space as every other tile.
+   v is the model's chin-to-crown fraction, sampled unflipped, so v maps
+   straight to y: chin at the top of the cell, crown at the bottom. The
+   image looks upside down; on the model it is the right way up. */
+function skinFaceTile(g,female){
+  var S=128, i;
+  /* the same base grain as TILE.SKIN, so a face blends into its own neck */
+  g.fillStyle="#DCDCDC"; g.fillRect(0,0,S,S);
+  for(i=0;i<600;i++){
+    var n=(Math.random()*66-40)|0;
+    g.fillStyle="rgba("+(210+n)+","+(210+n)+","+(210+n)+",0.5)";
+    g.beginPath(); g.arc(Math.random()*S,Math.random()*S,1+Math.random()*3,0,6.2832); g.fill();
+  }
+  function P(u,v){ return [u*S, v*S]; }
+  function blob(u,v,ru,rv,col){
+    var p=P(u,v); g.fillStyle=col; g.beginPath();
+    g.ellipse(p[0],p[1],ru*S,rv*S,0,0,6.2832); g.fill();
+  }
+  function line(u0,v0,u1,v1,col,w,bow){
+    var a=P(u0,v0), b=P(u1,v1);
+    g.strokeStyle=col; g.lineWidth=w; g.lineCap="round";
+    g.beginPath(); g.moveTo(a[0],a[1]);
+    if(bow)g.quadraticCurveTo((a[0]+b[0])/2,(a[1]+b[1])/2+bow,b[0],b[1]);
+    else g.lineTo(b[0],b[1]);
+    g.stroke();
+  }
+  var EYE=0.20, EY=0.615;
+  var brow=female?"rgba(96,72,54,0.85)":"rgba(74,54,38,0.92)";
+  for(var side=-1;side<=1;side+=2){
+    var eu=0.5+side*EYE;
+    blob(eu,EY,0.075,0.042,"rgba(158,124,98,0.35)");
+    blob(eu,EY,0.064,0.033,"rgba(238,234,226,0.98)");
+    blob(eu,EY,0.028,0.028,"rgba(88,102,84,0.98)");
+    blob(eu,EY,0.013,0.013,"rgba(14,11,9,0.99)");
+    line(eu-0.062,EY+0.034,eu+0.062,EY+0.034,"rgba(74,54,40,0.67)",2,-3);
+    line(eu-0.080,EY+0.086,eu+0.068,EY+0.092,brow,female?3.0:4.0,-4);
+  }
+  /* nose: a faint shadow, not a bar */
+  line(0.503,EY-0.020,0.496,EY-0.145,"rgba(156,120,94,0.24)",3,0);
+  blob(0.476,EY-0.160,0.013,0.008,"rgba(96,68,50,0.59)");
+  blob(0.524,EY-0.160,0.013,0.008,"rgba(96,68,50,0.59)");
+  line(0.370,EY-0.258,0.630,EY-0.258,female?"rgba(168,104,92,0.78)":"rgba(140,92,78,0.67)",
+       female?7.0:6.0,4);
+  if(!female){
+    for(i=0;i<1400;i++){
+      var u=0.5+(Math.random()-0.5)*0.52, v=EY-0.330+Math.random()*0.160;
+      var q=P(u,v);
+      g.fillStyle="rgba(58,44,32,"+(0.05+Math.random()*0.11).toFixed(3)+")";
+      g.fillRect(q[0],q[1],1.1,1.1);
+    }
+  }
+}
 function atlasTile(x,fn,idx){
   x.save();
   x.translate((idx%4)*256,Math.floor(idx/4)*256);
@@ -7715,6 +7756,15 @@ function glMakeTex(){
       g.fillStyle="rgba("+(238+v|0)+","+(244+v|0)+","+(250+v|0)+",0.6)";
       g.beginPath();g.arc(R(0,128),R(0,128),R(2,7),0,6.2832);g.fill();}
   },TILE.SNOW);
+  /* Faces are tiles in THIS atlas, not a second texture. A separate
+     texture made the head sample a different path from the body, miss the
+     skin grain, and show a brightness step at the neck -- which is what
+     read as a detached head. As a tile it is lit identically.
+     Painted chin-at-top: the atlas uploads unflipped, so texture v=0 is
+     the top row while model v=0 is the chin. Having that backwards put
+     the eyes at mouth height. */
+  atlasTile(x,function(g){ skinFaceTile(g,false); },TILE.FACE_M);
+  atlasTile(x,function(g){ skinFaceTile(g,true); },TILE.FACE_F);
   var t=gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D,t);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
@@ -7736,7 +7786,6 @@ function initGL(canvas){
   glSky=glProgram(SKY_V,SKY_F);
   if(!glProg||!glSky){gl=null;return false;}
   glTex=glMakeTex();
-  try{ glbBuildSkinAtlas(); }catch(e){ glSkinTex=null; }
   GLLOC={
     aPos:gl.getAttribLocation(glProg,"aPos"),aNrm:gl.getAttribLocation(glProg,"aNrm"),
     aCol:gl.getAttribLocation(glProg,"aCol"),aMat:gl.getAttribLocation(glProg,"aMat"),
@@ -7747,7 +7796,6 @@ function initGL(canvas){
     uFog:gl.getUniformLocation(glProg,"uFog"),uFogN:gl.getUniformLocation(glProg,"uFogN"),
     uFogF:gl.getUniformLocation(glProg,"uFogF"),uEye:gl.getUniformLocation(glProg,"uEye"),
     uTex:gl.getUniformLocation(glProg,"uTex"),uLitWin:gl.getUniformLocation(glProg,"uLitWin"),
-    uSkin:gl.getUniformLocation(glProg,"uSkin"),
     uSunVP:gl.getUniformLocation(glProg,"uSunVP"),uShadowMap:gl.getUniformLocation(glProg,"uShadowMap"),
     uShadowOn:gl.getUniformLocation(glProg,"uShadowOn"),
     uTorches:gl.getUniformLocation(glProg,"uTorches"),uTorchCount:gl.getUniformLocation(glProg,"uTorchCount"),
@@ -7947,12 +7995,14 @@ function glBuild(faces,batch){
         if(vc){var co=vidx*3;GBC[o3]=vc[co]/255;GBC[o3+1]=vc[co+1]/255;GBC[o3+2]=vc[co+2]/255;}
         else {GBC[o3]=r;GBC[o3+1]=g2;GBC[o3+2]=b2;}
         GBA[vi]=(mat===3)?1:(faceAO!==undefined?faceAO:aoAt(q[0],q[1],q[2],nx,ny,nz));
-        if(mat===6){
-          /* real per-corner UVs, straight from the mesh */
-          var uo=vidx*2;
-          GBM[o4]=6;GBM[o4+1]=f.uv[uo];GBM[o4+2]=f.uv[uo+1];GBM[o4+3]=(tile<0?0:tile);
+        if(mat===1){
+          /* a face supplies its own per-corner UVs; everything else keeps
+             the procedural projection computed above */
+          var uu,vv2;
+          if(f.uv){ var uo=vidx*2; uu=f.uv[uo]; vv2=f.uv[uo+1]; }
+          else { uu=GBUV[vidx*2]; vv2=GBUV[vidx*2+1]; }
+          GBM[o4]=1;GBM[o4+1]=uu;GBM[o4+2]=vv2;GBM[o4+3]=(tile<0?TILE.SKIN:tile);
         }
-        else if(mat===1){GBM[o4]=1;GBM[o4+1]=GBUV[vidx*2];GBM[o4+2]=GBUV[vidx*2+1];GBM[o4+3]=(tile<0?TILE.SKIN:tile);}
         else if(mat===5){GBM[o4]=5;GBM[o4+1]=alpha;GBM[o4+2]=0;GBM[o4+3]=0;}
         else {GBM[o4]=mat;GBM[o4+1]=0;GBM[o4+2]=0;GBM[o4+3]=0;}
         vi++;
@@ -8996,119 +9046,6 @@ function glbRefreshImported(){
       return Object.keys(GLB_IMPORTED); });
   });
 }
-/* ── character skin atlas ─────────────────────────────────────────────
-   The models carry no UVs and no textures -- only vertex colour -- so a
-   face cannot be shaded into existence. It has to be painted and then
-   mapped. This builds a 4x4 atlas of 256px cells on unit 2, and the
-   head vertices get a cylindrical unwrap derived from the rig, so cell 0
-   lands square on the front of the skull.
-
-   Cells: 0 male face, 1 female face, 2 weave, 3 leather. */
-var glSkinTex=null, SKIN_CELL={FACE_M:0, FACE_F:1, WEAVE:2, LEATHER:3};
-function skinPaintFace(g, female){
-  /* Painted in exactly the space the head unwrap produces: u = 0.5 + ang/2,
-     so u spans +-57 degrees around the skull with 0.5 dead ahead, and v
-     runs chin (0) to crown (1).
-     The first attempt put the eyes at u 0.425/0.575, which is only 8
-     degrees apart -- the whole face was squeezed into a strip down the
-     nose. Eyes belong near 30 degrees off centre, which is u 0.24/0.76. */
-  var W=256, H=256;
-  g.clearRect(0,0,W,H);
-  /* left transparent on purpose: alpha 0 lets the model's own vertex
-     colour through, so only features are painted, not a skin tone */
-  function px(u,v){ return [u*W, H-(v*H)]; }
-  function blob(u,v,ru,rv,col){
-    var p=px(u,v);
-    g.fillStyle=col; g.beginPath();
-    g.ellipse(p[0],p[1],ru*W,rv*H,0,0,6.2832); g.fill();
-  }
-  function stroke(u0,v0,u1,v1,col,w,lift){
-    var a=px(u0,v0), b=px(u1,v1);
-    g.strokeStyle=col; g.lineWidth=w; g.lineCap="round";
-    g.beginPath(); g.moveTo(a[0],a[1]);
-    if(lift)g.quadraticCurveTo((a[0]+b[0])/2,(a[1]+b[1])/2-lift,b[0],b[1]);
-    else g.lineTo(b[0],b[1]);
-    g.stroke();
-  }
-  var EYE=0.26;                     /* 30 degrees off centre */
-  var brow=female?"rgba(64,46,34,0.85)":"rgba(46,33,24,0.94)";
-  var lip =female?"rgba(158,88,80,0.80)":"rgba(126,80,70,0.60)";
-  for(var side=-1;side<=1;side+=2){
-    var eu=0.5+side*EYE;
-    blob(eu,0.575,0.070,0.042,"rgba(92,68,52,0.34)");        /* socket */
-    blob(eu,0.573,0.055,0.028,"rgba(236,232,222,0.97)");     /* white */
-    blob(eu,0.571,0.026,0.024,"rgba(74,88,72,0.97)");        /* iris */
-    blob(eu,0.571,0.012,0.012,"rgba(16,13,11,0.99)");        /* pupil */
-    blob(eu-side*0.016,0.581,0.008,0.007,"rgba(255,255,255,0.60)"); /* glint */
-    stroke(eu-0.062,0.600,eu+0.062,0.600,"rgba(48,35,26,0.80)",3.4,5);
-    stroke(eu-0.082,0.648,eu+0.070,0.655,brow,female?5.0:7.5,7);
-  }
-  /* nose: bridge shadow down one side, tip, nostrils */
-  stroke(0.494,0.640,0.486,0.500,"rgba(96,70,52,0.26)",8,0);
-  blob(0.5,0.492,0.030,0.020,"rgba(188,146,120,0.16)");
-  blob(0.468,0.486,0.017,0.010,"rgba(66,47,35,0.62)");
-  blob(0.532,0.486,0.017,0.010,"rgba(66,47,35,0.62)");
-  /* mouth */
-  stroke(0.385,0.395,0.615,0.395,lip,female?7.0:6.0,-5);
-  blob(0.5,0.425,0.090,0.014,"rgba(255,255,255,0.05)");
-  /* chin and cheek shaping */
-  blob(0.5,0.330,0.075,0.035,"rgba(176,132,108,0.10)");
-  blob(0.5-0.175,0.505,0.070,0.055,"rgba(198,128,104,0.14)");
-  blob(0.5+0.175,0.505,0.070,0.055,"rgba(198,128,104,0.14)");
-  if(!female){
-    for(var i=0;i<1600;i++){
-      var u=0.5+(Math.random()-0.5)*0.62, v=0.285+Math.random()*0.165;
-      var p=px(u,v);
-      g.fillStyle="rgba(44,34,26,"+(0.06+Math.random()*0.12).toFixed(3)+")";
-      g.fillRect(p[0],p[1],1.8,1.8);
-    }
-  }
-}
-function skinPaintWeave(g){
-  var W=256;
-  g.clearRect(0,0,W,W);
-  g.fillStyle="rgba(255,255,255,0)"; g.fillRect(0,0,W,W);
-  for(var y=0;y<W;y+=4){
-    g.fillStyle="rgba(255,255,255,0.10)"; g.fillRect(0,y,W,2);
-    g.fillStyle="rgba(0,0,0,0.10)"; g.fillRect(0,y+2,W,2);
-  }
-  for(var x=0;x<W;x+=4){
-    g.fillStyle="rgba(0,0,0,0.07)"; g.fillRect(x,0,2,W);
-  }
-}
-function skinPaintLeather(g){
-  var W=256;
-  g.clearRect(0,0,W,W);
-  for(var i=0;i<2600;i++){
-    var r=2+Math.random()*5;
-    g.fillStyle="rgba("+(Math.random()<0.5?"255,255,255,0.05":"0,0,0,0.06")+")";
-    g.beginPath(); g.arc(Math.random()*W,Math.random()*W,r,0,6.2832); g.fill();
-  }
-}
-function glbBuildSkinAtlas(){
-  if(!gl)return null;
-  var c=document.createElement("canvas"); c.width=1024; c.height=1024;
-  var x=c.getContext("2d");
-  function cell(idx,fn){
-    x.save(); x.translate((idx%4)*256, Math.floor(idx/4)*256);
-    x.beginPath(); x.rect(0,0,256,256); x.clip();
-    fn(x); x.restore();
-  }
-  cell(SKIN_CELL.FACE_M,function(g){skinPaintFace(g,false);});
-  cell(SKIN_CELL.FACE_F,function(g){skinPaintFace(g,true);});
-  cell(SKIN_CELL.WEAVE,skinPaintWeave);
-  cell(SKIN_CELL.LEATHER,skinPaintLeather);
-  var t=gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D,t);
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
-  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,c);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
-  glSkinTex=t;
-  return t;
-}
 /* ── head subdivision ────────────────────────────────────────────────
    The face is only about sixty triangles, so a painted eye gets smeared
    across a polygon bigger than the eye itself: blurred features and a
@@ -9709,8 +9646,8 @@ function glbPlace(op,ch,posed,x,z,gy,hx,hz){
   var prim=ch.meshes[0][0], P=posed.pos, N=posed.nrm, idx=prim.indices, tc=prim.triColor;
   var vcl=prim.vertColor, tt=prim.triTile;
   /* the head gets the painted face; everything else keeps the grain */
-  var hu=glSkinTex?glbHeadUVs(ch):null;
-  var faceCell=(ch._female?SKIN_CELL.FACE_F:SKIN_CELL.FACE_M);
+  var hu=glbHeadUVs(ch);
+  var faceCell=(ch._female?TILE.FACE_F:TILE.FACE_M);
   for(var k=0,ti=0;k+2<idx.length;k+=3,ti++){
     var a=idx[k],b=idx[k+1],c=idx[k+2];
     var isFace=false;
@@ -9740,7 +9677,7 @@ function glbPlace(op,ch,posed,x,z,gy,hx,hz){
                 vcl[b*3],vcl[b*3+1],vcl[b*3+2],
                 vcl[c*3],vcl[c*3+1],vcl[c*3+2]]:null,
         uv:[hu.uv[a*2],hu.uv[a*2+1],hu.uv[b*2],hu.uv[b*2+1],hu.uv[c*2],hu.uv[c*2+1]],
-        m:6, tile:faceCell, ao:1, glb:1});
+        m:1, tile:faceCell, ao:1, glb:1});
       continue;
     }
     op.push({
@@ -11629,10 +11566,6 @@ function drawGL(){
   gl.uniform1i(GLLOC.uTex,0);
   gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,glShadowTex);
   gl.uniform1i(GLLOC.uShadowMap,1);
-  if(glSkinTex){
-    gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,glSkinTex);
-    gl.uniform1i(GLLOC.uSkin,2);
-  }
   gl.disable(gl.BLEND);gl.depthMask(true);
   glDrawBatch(glStatic.o);glDrawBatch(glDyn.o);
   if(INK&&glDyn.k&&glDyn.k.n)glDrawBatch(glDyn.k);
