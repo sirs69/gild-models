@@ -216,7 +216,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v6.060</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v6.061</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -7449,12 +7449,9 @@ var FSRC=
 "   vec2 suv=(vec2(sx,sy)+clamp(vec2(vM.y,vM.z),0.004,0.996))*0.25;"+
 "   vec4 sk=texture2D(uSkin,suv);"+
 "   base=mix(vC,sk.rgb,sk.a);"+
-"   float l6=dot(sk.rgb,vec3(0.299,0.587,0.114));"+
-"   texL=mix(0.5,l6,sk.a);"+
-"   float e6=0.0011;"+
-"   texGx=(dot(texture2D(uSkin,suv+vec2(e6,0.0)).rgb,vec3(0.299,0.587,0.114))-l6)*sk.a;"+
-"   texGy=(dot(texture2D(uSkin,suv+vec2(0.0,e6)).rgb,vec3(0.299,0.587,0.114))-l6)*sk.a;"+
-"   hasTex=sk.a;"+
+
+"   texGx=0.0; texGy=0.0;"+
+"   hasTex=0.0;"+
 "   skinMode=1.0;"+
 " }"+
 " if(m>1.5){ if(uLitWin>0.5){gl_FragColor=vec4(1.0,0.81,0.48,1.0);return;} }"+
@@ -9038,13 +9035,13 @@ function skinPaintFace(g, female){
   var lip =female?"rgba(158,88,80,0.80)":"rgba(126,80,70,0.60)";
   for(var side=-1;side<=1;side+=2){
     var eu=0.5+side*EYE;
-    blob(eu,0.600,0.070,0.042,"rgba(92,68,52,0.34)");        /* socket */
-    blob(eu,0.598,0.055,0.028,"rgba(236,232,222,0.97)");     /* white */
-    blob(eu,0.596,0.026,0.024,"rgba(74,88,72,0.97)");        /* iris */
-    blob(eu,0.596,0.012,0.012,"rgba(16,13,11,0.99)");        /* pupil */
-    blob(eu-side*0.016,0.606,0.008,0.007,"rgba(255,255,255,0.60)"); /* glint */
-    stroke(eu-0.062,0.626,eu+0.062,0.626,"rgba(48,35,26,0.80)",3.4,5);
-    stroke(eu-0.082,0.672,eu+0.070,0.680,brow,female?5.0:7.5,7);
+    blob(eu,0.575,0.070,0.042,"rgba(92,68,52,0.34)");        /* socket */
+    blob(eu,0.573,0.055,0.028,"rgba(236,232,222,0.97)");     /* white */
+    blob(eu,0.571,0.026,0.024,"rgba(74,88,72,0.97)");        /* iris */
+    blob(eu,0.571,0.012,0.012,"rgba(16,13,11,0.99)");        /* pupil */
+    blob(eu-side*0.016,0.581,0.008,0.007,"rgba(255,255,255,0.60)"); /* glint */
+    stroke(eu-0.062,0.600,eu+0.062,0.600,"rgba(48,35,26,0.80)",3.4,5);
+    stroke(eu-0.082,0.648,eu+0.070,0.655,brow,female?5.0:7.5,7);
   }
   /* nose: bridge shadow down one side, tip, nostrils */
   stroke(0.494,0.640,0.486,0.500,"rgba(96,70,52,0.26)",8,0);
@@ -9052,7 +9049,7 @@ function skinPaintFace(g, female){
   blob(0.468,0.486,0.017,0.010,"rgba(66,47,35,0.62)");
   blob(0.532,0.486,0.017,0.010,"rgba(66,47,35,0.62)");
   /* mouth */
-  stroke(0.372,0.410,0.628,0.410,lip,female?6.0:5.0,-4);
+  stroke(0.385,0.395,0.615,0.395,lip,female?7.0:6.0,-5);
   blob(0.5,0.425,0.090,0.014,"rgba(255,255,255,0.05)");
   /* chin and cheek shaping */
   blob(0.5,0.330,0.075,0.035,"rgba(176,132,108,0.10)");
