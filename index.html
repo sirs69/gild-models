@@ -216,7 +216,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v6.053</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v6.057</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -7426,17 +7426,39 @@ var FSRC=
 "uniform vec3 uSkyAmb;uniform vec3 uGrdAmb;"+
 "uniform float uFogN;uniform float uFogF;uniform vec3 uEye;"+
 "uniform sampler2D uTex;uniform float uLitWin;"+
+"uniform sampler2D uSkin;"+
 "uniform mat4 uSunVP;uniform sampler2D uShadowMap;uniform float uShadowOn;"+
 "uniform vec3 uTorches[16];uniform float uTorchCount;"+
 "float decodeDepth(vec4 rgba){return dot(rgba,vec4(1.0,1.0/255.0,1.0/65025.0,1.0/16581375.0));}"+
 "void main(){"+
 " float m=vM.x;float texL=0.5,texGx=0.0,texGy=0.0,hasTex=0.0;"+
+/* mode 6: a loaded model's own skin. vM.yz are real UVs from the mesh
+   rather than a procedural projection, and vM.w picks the atlas cell, so
+   a face can be painted where a face belongs.
+   It deliberately does NOT return here. An early return skipped the
+   shadow map, the fog and the torches, and a head lit differently from
+   the body it sits on reads as a detached head. It only sets base and
+   the bump terms, then falls through the same lighting as everything. */
+" float skinMode=0.0;"+
 " if(m>4.5){gl_FragColor=vec4(vC,vM.y);return;}"+
 " if(m>2.5&&m<3.5){gl_FragColor=vec4(0.0,0.0,0.0,0.22);return;}"+
 " if(m>3.5){gl_FragColor=vec4(vC,1.0);return;}"+
 " vec3 base=vC;"+
+" if(m>5.5){"+
+"   float sx=mod(vM.w,4.0), sy=floor(vM.w/4.0);"+
+"   vec2 suv=(vec2(sx,sy)+clamp(vec2(vM.y,vM.z),0.004,0.996))*0.25;"+
+"   vec4 sk=texture2D(uSkin,suv);"+
+"   base=mix(vC,sk.rgb,sk.a);"+
+"   float l6=dot(sk.rgb,vec3(0.299,0.587,0.114));"+
+"   texL=mix(0.5,l6,sk.a);"+
+"   float e6=0.0011;"+
+"   texGx=(dot(texture2D(uSkin,suv+vec2(e6,0.0)).rgb,vec3(0.299,0.587,0.114))-l6)*sk.a;"+
+"   texGy=(dot(texture2D(uSkin,suv+vec2(0.0,e6)).rgb,vec3(0.299,0.587,0.114))-l6)*sk.a;"+
+"   hasTex=sk.a;"+
+"   skinMode=1.0;"+
+" }"+
 " if(m>1.5){ if(uLitWin>0.5){gl_FragColor=vec4(1.0,0.81,0.48,1.0);return;} }"+
-" if(m>0.5&&m<1.5){"+
+" if(m>0.5&&m<1.5&&skinMode<0.5){"+
 "   float tx=mod(vM.w,4.0), ty=floor(vM.w/4.0);"+
 "   vec2 fr=fract(vec2(vM.y,vM.z));"+
 "   vec2 auv=(vec2(tx,ty)+0.015+fr*0.97)*0.25;"+
@@ -7717,6 +7739,7 @@ function initGL(canvas){
   glSky=glProgram(SKY_V,SKY_F);
   if(!glProg||!glSky){gl=null;return false;}
   glTex=glMakeTex();
+  try{ glbBuildSkinAtlas(); }catch(e){ glSkinTex=null; }
   GLLOC={
     aPos:gl.getAttribLocation(glProg,"aPos"),aNrm:gl.getAttribLocation(glProg,"aNrm"),
     aCol:gl.getAttribLocation(glProg,"aCol"),aMat:gl.getAttribLocation(glProg,"aMat"),
@@ -7727,6 +7750,7 @@ function initGL(canvas){
     uFog:gl.getUniformLocation(glProg,"uFog"),uFogN:gl.getUniformLocation(glProg,"uFogN"),
     uFogF:gl.getUniformLocation(glProg,"uFogF"),uEye:gl.getUniformLocation(glProg,"uEye"),
     uTex:gl.getUniformLocation(glProg,"uTex"),uLitWin:gl.getUniformLocation(glProg,"uLitWin"),
+    uSkin:gl.getUniformLocation(glProg,"uSkin"),
     uSunVP:gl.getUniformLocation(glProg,"uSunVP"),uShadowMap:gl.getUniformLocation(glProg,"uShadowMap"),
     uShadowOn:gl.getUniformLocation(glProg,"uShadowOn"),
     uTorches:gl.getUniformLocation(glProg,"uTorches"),uTorchCount:gl.getUniformLocation(glProg,"uTorchCount"),
@@ -7910,6 +7934,11 @@ function glBuild(faces,batch){
       }
     }
     var alpha=(f.alpha===undefined?1:f.alpha);
+    /* f.vc carries a colour per corner (3 per vertex, 0-255). Faces that
+       have one carry real colour variation across the triangle instead
+       of one averaged value -- a modelled figure keeps the shading its
+       vertex colours describe. Faces without it behave exactly as before. */
+    var vc=f.vc;
     for(t=1;t<n-1;t++){
       for(j=0;j<3;j++){
         var vidx=(j===0)?0:(j===1?t:t+1);
@@ -7918,9 +7947,15 @@ function glBuild(faces,batch){
         GBP[o3]=q[0];GBP[o3+1]=q[1];GBP[o3+2]=q[2];
         if(vn){var vo=vidx*3;GBN[o3]=vn[vo];GBN[o3+1]=vn[vo+1];GBN[o3+2]=vn[vo+2];}
         else {GBN[o3]=nx;GBN[o3+1]=ny;GBN[o3+2]=nz;}
-        GBC[o3]=r;GBC[o3+1]=g2;GBC[o3+2]=b2;
+        if(vc){var co=vidx*3;GBC[o3]=vc[co]/255;GBC[o3+1]=vc[co+1]/255;GBC[o3+2]=vc[co+2]/255;}
+        else {GBC[o3]=r;GBC[o3+1]=g2;GBC[o3+2]=b2;}
         GBA[vi]=(mat===3)?1:(faceAO!==undefined?faceAO:aoAt(q[0],q[1],q[2],nx,ny,nz));
-        if(mat===1){GBM[o4]=1;GBM[o4+1]=GBUV[vidx*2];GBM[o4+2]=GBUV[vidx*2+1];GBM[o4+3]=(tile<0?TILE.SKIN:tile);}
+        if(mat===6){
+          /* real per-corner UVs, straight from the mesh */
+          var uo=vidx*2;
+          GBM[o4]=6;GBM[o4+1]=f.uv[uo];GBM[o4+2]=f.uv[uo+1];GBM[o4+3]=(tile<0?0:tile);
+        }
+        else if(mat===1){GBM[o4]=1;GBM[o4+1]=GBUV[vidx*2];GBM[o4+2]=GBUV[vidx*2+1];GBM[o4+3]=(tile<0?TILE.SKIN:tile);}
         else if(mat===5){GBM[o4]=5;GBM[o4+1]=alpha;GBM[o4+2]=0;GBM[o4+3]=0;}
         else {GBM[o4]=mat;GBM[o4+1]=0;GBM[o4+2]=0;GBM[o4+3]=0;}
         vi++;
@@ -8823,8 +8858,11 @@ function glbBuildCharacter(buf,tintFallback){
       idx=new Ctor(bin,(bv.byteOffset||0)+(acc.byteOffset||0),acc.count).slice();
     }
     var nv=pos.length/3, nt=idx?idx.length/3:0;
-    /* no texture decode here: one flat colour per triangle, from the
-       material's base colour, which is what the baked path produces too */
+    /* Colour is kept BOTH per triangle (for anything still drawing flat)
+       and per vertex, which is what the models actually contain -- these
+       meshes carry a thousand-odd distinct vertex colours and averaging
+       three of them into one value per face was throwing that detail
+       away and leaving visible faceting. */
     var mat=(json.materials||[])[p.material||0];
     var bc=(mat&&mat.pbrMetallicRoughness&&mat.pbrMetallicRoughness.baseColorFactor)||tintFallback||[0.7,0.65,0.6,1];
     var vcol=p.attributes.COLOR_0!==undefined?gltfAccessor(json,bin,p.attributes.COLOR_0):null;
@@ -8842,6 +8880,25 @@ function glbBuildCharacter(buf,tintFallback){
       tri[t*3+1]=Math.min(255,Math.round(g2*255));
       tri[t*3+2]=Math.min(255,Math.round(b2*255));
     }
+    var vert=new Uint8Array(nv*3);
+    for(var vi2=0;vi2<nv;vi2++){
+      var vr=bc[0],vg=bc[1],vb=bc[2];
+      if(vcol){ vr*=vcol[vi2*vn]; vg*=vcol[vi2*vn+1]; vb*=vcol[vi2*vn+2]; }
+      vert[vi2*3]=Math.min(255,Math.round(vr*255));
+      vert[vi2*3+1]=Math.min(255,Math.round(vg*255));
+      vert[vi2*3+2]=Math.min(255,Math.round(vb*255));
+    }
+    /* Cloth or skin, decided per triangle from its own colour, so the
+       figure gets the same grain the procedural townsfolk already wear.
+       Skin reads as a warm, low-saturation red-dominant tone. */
+    var tiles=new Uint8Array(nt);
+    for(var t2=0;t2<nt;t2++){
+      var tr=tri[t2*3],tg=tri[t2*3+1],tb=tri[t2*3+2];
+      var mx=Math.max(tr,tg,tb),mn=Math.min(tr,tg,tb);
+      var sat=mx?(mx-mn)/mx:0;
+      var skinish=(tr>=tg&&tg>=tb&&sat>0.10&&sat<0.55&&mx>70);
+      tiles[t2]=skinish?TILE.SKIN:TILE.CLOTH;
+    }
     var joint4=new Uint8Array(nv*4), weight4=new Float32Array(nv*4);
     for(var i=0;i<nv;i++){
       if(j4&&w4){
@@ -8849,7 +8906,8 @@ function glbBuildCharacter(buf,tintFallback){
       } else { joint4[i*4]=0; weight4[i*4]=1; }
     }
     return {nv:nv, nt:nt, pos:pos, nrm:nrm||new Float32Array(nv*3),
-            joint4:joint4, weight4:weight4, indices:idx, triColor:tri};
+            joint4:joint4, weight4:weight4, indices:idx, triColor:tri,
+            vertColor:vert, triTile:tiles};
   });});
   var animations=(json.animations||[]).map(function(a){return {
     name:a.name,
@@ -8935,8 +8993,163 @@ function glbRefreshImported(){
         });
       });
     });
-    return chain.then(function(){ if(typeof drawCheats==="function"&&TEST_SHOWN)drawCheats(); return Object.keys(GLB_IMPORTED); });
+    return chain.then(function(){
+      try{ glbMarkSex(); }catch(e){}
+      if(typeof drawCheats==="function"&&TEST_SHOWN)drawCheats();
+      return Object.keys(GLB_IMPORTED); });
   });
+}
+/* ── character skin atlas ─────────────────────────────────────────────
+   The models carry no UVs and no textures -- only vertex colour -- so a
+   face cannot be shaded into existence. It has to be painted and then
+   mapped. This builds a 4x4 atlas of 256px cells on unit 2, and the
+   head vertices get a cylindrical unwrap derived from the rig, so cell 0
+   lands square on the front of the skull.
+
+   Cells: 0 male face, 1 female face, 2 weave, 3 leather. */
+var glSkinTex=null, SKIN_CELL={FACE_M:0, FACE_F:1, WEAVE:2, LEATHER:3};
+function skinPaintFace(g, female){
+  /* Painted in exactly the space the head unwrap produces: u = 0.5 + ang/2,
+     so u spans +-57 degrees around the skull with 0.5 dead ahead, and v
+     runs chin (0) to crown (1).
+     The first attempt put the eyes at u 0.425/0.575, which is only 8
+     degrees apart -- the whole face was squeezed into a strip down the
+     nose. Eyes belong near 30 degrees off centre, which is u 0.24/0.76. */
+  var W=256, H=256;
+  g.clearRect(0,0,W,H);
+  /* left transparent on purpose: alpha 0 lets the model's own vertex
+     colour through, so only features are painted, not a skin tone */
+  function px(u,v){ return [u*W, H-(v*H)]; }
+  function blob(u,v,ru,rv,col){
+    var p=px(u,v);
+    g.fillStyle=col; g.beginPath();
+    g.ellipse(p[0],p[1],ru*W,rv*H,0,0,6.2832); g.fill();
+  }
+  function stroke(u0,v0,u1,v1,col,w,lift){
+    var a=px(u0,v0), b=px(u1,v1);
+    g.strokeStyle=col; g.lineWidth=w; g.lineCap="round";
+    g.beginPath(); g.moveTo(a[0],a[1]);
+    if(lift)g.quadraticCurveTo((a[0]+b[0])/2,(a[1]+b[1])/2-lift,b[0],b[1]);
+    else g.lineTo(b[0],b[1]);
+    g.stroke();
+  }
+  var EYE=0.26;                     /* 30 degrees off centre */
+  var brow=female?"rgba(64,46,34,0.85)":"rgba(46,33,24,0.94)";
+  var lip =female?"rgba(158,88,80,0.80)":"rgba(126,80,70,0.60)";
+  for(var side=-1;side<=1;side+=2){
+    var eu=0.5+side*EYE;
+    blob(eu,0.600,0.070,0.042,"rgba(92,68,52,0.34)");        /* socket */
+    blob(eu,0.598,0.055,0.028,"rgba(236,232,222,0.97)");     /* white */
+    blob(eu,0.596,0.026,0.024,"rgba(74,88,72,0.97)");        /* iris */
+    blob(eu,0.596,0.012,0.012,"rgba(16,13,11,0.99)");        /* pupil */
+    blob(eu-side*0.016,0.606,0.008,0.007,"rgba(255,255,255,0.60)"); /* glint */
+    stroke(eu-0.062,0.626,eu+0.062,0.626,"rgba(48,35,26,0.80)",3.4,5);
+    stroke(eu-0.082,0.672,eu+0.070,0.680,brow,female?5.0:7.5,7);
+  }
+  /* nose: bridge shadow down one side, tip, nostrils */
+  stroke(0.494,0.640,0.486,0.500,"rgba(96,70,52,0.26)",8,0);
+  blob(0.5,0.492,0.030,0.020,"rgba(188,146,120,0.16)");
+  blob(0.468,0.486,0.017,0.010,"rgba(66,47,35,0.62)");
+  blob(0.532,0.486,0.017,0.010,"rgba(66,47,35,0.62)");
+  /* mouth */
+  stroke(0.372,0.410,0.628,0.410,lip,female?6.0:5.0,-4);
+  blob(0.5,0.425,0.090,0.014,"rgba(255,255,255,0.05)");
+  /* chin and cheek shaping */
+  blob(0.5,0.330,0.075,0.035,"rgba(176,132,108,0.10)");
+  blob(0.5-0.175,0.505,0.070,0.055,"rgba(198,128,104,0.14)");
+  blob(0.5+0.175,0.505,0.070,0.055,"rgba(198,128,104,0.14)");
+  if(!female){
+    for(var i=0;i<1600;i++){
+      var u=0.5+(Math.random()-0.5)*0.62, v=0.285+Math.random()*0.165;
+      var p=px(u,v);
+      g.fillStyle="rgba(44,34,26,"+(0.06+Math.random()*0.12).toFixed(3)+")";
+      g.fillRect(p[0],p[1],1.8,1.8);
+    }
+  }
+}
+function skinPaintWeave(g){
+  var W=256;
+  g.clearRect(0,0,W,W);
+  g.fillStyle="rgba(255,255,255,0)"; g.fillRect(0,0,W,W);
+  for(var y=0;y<W;y+=4){
+    g.fillStyle="rgba(255,255,255,0.10)"; g.fillRect(0,y,W,2);
+    g.fillStyle="rgba(0,0,0,0.10)"; g.fillRect(0,y+2,W,2);
+  }
+  for(var x=0;x<W;x+=4){
+    g.fillStyle="rgba(0,0,0,0.07)"; g.fillRect(x,0,2,W);
+  }
+}
+function skinPaintLeather(g){
+  var W=256;
+  g.clearRect(0,0,W,W);
+  for(var i=0;i<2600;i++){
+    var r=2+Math.random()*5;
+    g.fillStyle="rgba("+(Math.random()<0.5?"255,255,255,0.05":"0,0,0,0.06")+")";
+    g.beginPath(); g.arc(Math.random()*W,Math.random()*W,r,0,6.2832); g.fill();
+  }
+}
+function glbBuildSkinAtlas(){
+  if(!gl)return null;
+  var c=document.createElement("canvas"); c.width=1024; c.height=1024;
+  var x=c.getContext("2d");
+  function cell(idx,fn){
+    x.save(); x.translate((idx%4)*256, Math.floor(idx/4)*256);
+    x.beginPath(); x.rect(0,0,256,256); x.clip();
+    fn(x); x.restore();
+  }
+  cell(SKIN_CELL.FACE_M,function(g){skinPaintFace(g,false);});
+  cell(SKIN_CELL.FACE_F,function(g){skinPaintFace(g,true);});
+  cell(SKIN_CELL.WEAVE,skinPaintWeave);
+  cell(SKIN_CELL.LEATHER,skinPaintLeather);
+  var t=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D,t);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,c);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  glSkinTex=t;
+  return t;
+}
+/* Head UVs, derived rather than authored: take every vertex the Head bone
+   actually drives, express it in that bone's own bind frame, and unwrap
+   cylindrically about the skull's vertical axis with u=0.5 facing forward.
+   Vertices behind the ears fall outside 0..1 and are left untextured, so
+   the paint only lands on the face. */
+function glbHeadUVs(ch){
+  if(ch._headUV!==undefined)return ch._headUV;
+  var skin=ch.skins[0], hj=glbHeadJoint(ch);
+  if(hj<0){ ch._headUV=null; return null; }
+  var prim=ch.meshes[0][0], nv=prim.nv;
+  var node=skin.joints[hj];
+  /* bind-pose position of the head bone, from its inverse bind matrix */
+  var ib=skin.inverseBind, o=hj*16;
+  var hx=-(ib[o]*ib[o+12]+ib[o+1]*ib[o+13]+ib[o+2]*ib[o+14]);
+  var hy=-(ib[o+4]*ib[o+12]+ib[o+5]*ib[o+13]+ib[o+6]*ib[o+14]);
+  var hz=-(ib[o+8]*ib[o+12]+ib[o+9]*ib[o+13]+ib[o+10]*ib[o+14]);
+  var uv=new Float32Array(nv*2), on=new Uint8Array(nv);
+  var minY=1e9,maxY=-1e9,any=false;
+  for(var i=0;i<nv;i++){
+    var w=0;
+    for(var q=0;q<4;q++)if(prim.joint4[i*4+q]===hj)w+=prim.weight4[i*4+q];
+    if(w<0.5)continue;
+    on[i]=1; any=true;
+    var dy=prim.pos[i*3+1]-hy;
+    if(dy<minY)minY=dy; if(dy>maxY)maxY=dy;
+  }
+  if(!any){ ch._headUV=null; return null; }
+  var span=Math.max(maxY-minY,1e-4);
+  for(i=0;i<nv;i++){
+    if(!on[i])continue;
+    var dx=prim.pos[i*3]-hx, dz=prim.pos[i*3+2]-hz;
+    /* +Z is the model's forward, so atan2(dx,dz)=0 is dead ahead */
+    var ang=Math.atan2(dx,dz);
+    uv[i*2]=0.5+ang/2.0;                    /* wider than pi: face fills the cell */
+    uv[i*2+1]=(prim.pos[i*3+1]-hy-minY)/span;
+  }
+  ch._headUV={uv:uv,on:on};
+  return ch._headUV;
 }
 function glbImportedNames(){ return Object.keys(GLB_IMPORTED); }
 /* ── models come down from a CDN on first run ─────────────────────────
@@ -9037,6 +9250,7 @@ function glbCdnLoad(){
     }
     return batch().then(function(){
       GLB_CDN_STATE="done";
+      try{ glbMarkSex(); }catch(e){}
       glbLog("CDN: "+GLB_CDN_OK+" loaded, "+GLB_CDN_MISS+" missing");
       return true;
     });
@@ -9116,7 +9330,15 @@ var GLB_PROP_SCALE={
   gild_shield:0.55, gild_shield_heater:0.55,
   gild_bow_wooden:1.0
 };
-function glbPropScale(name){ return GLB_PROP_SCALE[name]||0.17; }
+/* Helms are matched by pattern, so they cannot be listed by name above;
+   they are assumed to be authored in metres like the rest of the pack. */
+/* Default 1.0, not the old 0.17: this pack is authored in metres, and a
+   prop matched by pattern rather than listed by name (any helm) has no
+   table entry to fall back on -- the stale factor was quartering them. */
+function glbPropScale(name){
+  var v=GLB_PROP_SCALE[name];
+  return (v===undefined||v===null)?1.0:v;
+}
 /* grip: most weapons are modelled blade/head-up from a grip at the
    origin, hand_r's own axes run down the arm -- rotate the blade up out
    of the fist, nudge into the palm */
@@ -9143,7 +9365,34 @@ function glbBowGripMatrix(){
   var a=0.25, ca=Math.cos(a), sa=Math.sin(a);
   return new Float32Array([ca,sa,0,0, -sa,ca,0,0, 0,0,1,0, 0.02,-0.05,0.04,1]);
 }
+/* A helm rides the Head bone the way a blade rides the hand. Solved from
+   the Head bone's actual posed frame in Idle_Loop (mesh +Y onto world up,
+   mesh +Z onto the model's forward) and checked to hold within 2 degrees
+   across the clip, with a 2cm seat so the brow sits on the skull rather
+   than inside it. */
+function glbHelmGripMatrix(){
+  return new Float32Array([
+     0.997,-0.060,-0.032, 0,
+     0.050, 0.967,-0.247, 0,
+     0.046, 0.245, 0.968, 0,
+     0.001, 0.019,-0.005, 1]);
+}
+/* Headgear is matched by name like livestock, so any helm asset dropped
+   into the folder is picked up without touching this file again. */
+var GLB_HELM_RE=/(^|_)(helm|helmet|helmed|kettle|sallet|bascinet|coif|cap|hood|hat)(_|$)/i;
+function glbHelms(){
+  return glbImportedNames().filter(function(n){
+    var c=GLB_IMPORTED[n];
+    /* a helm is a prop mesh, not a rigged figure */
+    return GLB_HELM_RE.test(n)&&c&&c.meshes&&c.meshes[0]&&!(c.skins&&c.skins.length);
+  }).sort();
+}
+function glbHelmFor(uid){
+  var h=glbHelms();
+  return h.length?h[(uid||0)%h.length]:null;
+}
 function glbGripFor(propName){
+  if(GLB_HELM_RE.test(propName))return glbHelmGripMatrix();
   if(propName.indexOf("bow")>=0)return glbBowGripMatrix();
   if(propName.indexOf("shield")>=0)return glbShieldGripMatrix();
   return glbGripMatrix();
@@ -9172,12 +9421,21 @@ function glbAttachProp(out, character, world, propName, boneName, worldX, worldZ
     var lnx=M[0]*nx0+M[4]*ny0+M[8]*nz0, lny=M[1]*nx0+M[5]*ny0+M[9]*nz0, lnz=M[2]*nx0+M[6]*ny0+M[10]*nz0;
     wnrm[i*3]=rx*lnx+hx*lnz; wnrm[i*3+1]=lny; wnrm[i*3+2]=rz*lnx+hz*lnz;
   }
-  var idx=prop.indices, triCol=prop.triColor;
+  var idx=prop.indices, triCol=prop.triColor, pvc=prop.vertColor;
+  /* A weapon is wood and iron, not cloth or flesh: the plank grain reads
+     as haft and grip at this size, and leaves the blade its own colour. */
+  var propTile=(propName.indexOf("bow")>=0||propName.indexOf("spear")>=0||
+                propName.indexOf("hammer")>=0)?TILE.PLANK:TILE.STONE;
   for(var k=0,triI=0;k+2<idx.length;k+=3,triI++){
     var a=idx[k],b=idx[k+1],c=idx[k+2];
     var P=function(j){return [wpos[j*3],wpos[j*3+1],wpos[j*3+2]];};
     var N=function(j){return [wnrm[j*3],wnrm[j*3+1],wnrm[j*3+2]];};
-    out.push({p:[P(a),P(b),P(c)], n:[].concat(N(a),N(b),N(c)), c:[triCol[triI*3],triCol[triI*3+1],triCol[triI*3+2]], m:0, tile:-1, ao:1});
+    out.push({p:[P(a),P(b),P(c)], n:[].concat(N(a),N(b),N(c)),
+      c:[triCol[triI*3],triCol[triI*3+1],triCol[triI*3+2]],
+      vc:pvc?[pvc[a*3],pvc[a*3+1],pvc[a*3+2],
+              pvc[b*3],pvc[b*3+1],pvc[b*3+2],
+              pvc[c*3],pvc[c*3+1],pvc[c*3+2]]:null,
+      m:1, tile:propTile, ao:1});
   }
 }
 /* ── loaded models take over the real townsfolk ──────────────────────
@@ -9203,7 +9461,10 @@ var GLB_ROLE_SETS={
    gild_cattle -- registers itself. Nothing here needs editing to add a
    species: drop the file in and it is picked up. */
 var GLB_BEAST_KINDS={
-  ox:    /(^|_)(ox|oxen|cow|cattle|brahma|bull|steer|zebu)(_|$)/i,
+  /* ox and cattle overlap on purpose: an ox IS cattle, and someone who
+     only has a cow asset should still get a beast in the cart shafts */
+  ox:    /(^|_)(ox|oxen|bull|steer|cow|cattle|brahma|zebu)(_|$)/i,
+  cattle:/(^|_)(cow|cattle|brahma|zebu|heifer|ox|oxen|bull|steer)(_|$)/i,
   horse: /(^|_)(horse|mare|stallion|pony|nag|rouncey)(_|$)/i,
   goat:  /(^|_)(goat|kid_goat|nanny|billy)(_|$)/i,
   sheep: /(^|_)(sheep|ewe|ram|lamb)(_|$)/i,
@@ -9218,6 +9479,15 @@ function glbBeast(kind,uid){
     return re.test(n)&&c&&c.skins&&c.skins.length&&c.animations&&c.animations.length;
   });
   return have.length?have[(uid||0)%have.length]:null;
+}
+/* which face to paint: the model's own name is the only thing that says
+   whether it is a woman, and it is set once at load rather than guessed
+   per frame */
+function glbMarkSex(){
+  glbImportedNames().forEach(function(n){
+    var c=GLB_IMPORTED[n]; if(!c)return;
+    c._female=/woman|_f($|[^a-z])|female|girl|wife|maid/i.test(n);
+  });
 }
 function glbForRole(role,gender,uid){
   var key=(role==="guard"?"guard-":"walker-")+(gender?"f":"m");
@@ -9330,8 +9600,36 @@ function glbPlace(op,ch,posed,x,z,gy,hx,hz){
   var hl=Math.hypot(hx,hz)||1; hx/=hl; hz/=hl;
   var rx=hz, rz=-hx;
   var prim=ch.meshes[0][0], P=posed.pos, N=posed.nrm, idx=prim.indices, tc=prim.triColor;
+  var vcl=prim.vertColor, tt=prim.triTile;
+  /* the head gets the painted face; everything else keeps the grain */
+  var hu=glSkinTex?glbHeadUVs(ch):null;
+  var faceCell=(ch._female?SKIN_CELL.FACE_F:SKIN_CELL.FACE_M);
   for(var k=0,ti=0;k+2<idx.length;k+=3,ti++){
     var a=idx[k],b=idx[k+1],c=idx[k+2];
+    var isFace=false;
+    if(hu&&hu.on[a]&&hu.on[b]&&hu.on[c]){
+      /* only where all three corners land inside the painted cell, so a
+         triangle never stretches the face around the back of the skull */
+      var ua=hu.uv[a*2],ub=hu.uv[b*2],uc=hu.uv[c*2];
+      if(ua>0.02&&ua<0.98&&ub>0.02&&ub<0.98&&uc>0.02&&uc<0.98&&
+         Math.max(ua,ub,uc)-Math.min(ua,ub,uc)<0.45)isFace=true;
+    }
+    if(isFace){
+      op.push({
+        p:[[x+rx*P[a*3]+hx*P[a*3+2], gy+P[a*3+1], z+rz*P[a*3]+hz*P[a*3+2]],
+           [x+rx*P[b*3]+hx*P[b*3+2], gy+P[b*3+1], z+rz*P[b*3]+hz*P[b*3+2]],
+           [x+rx*P[c*3]+hx*P[c*3+2], gy+P[c*3+1], z+rz*P[c*3]+hz*P[c*3+2]]],
+        n:[rx*N[a*3]+hx*N[a*3+2],N[a*3+1],rz*N[a*3]+hz*N[a*3+2],
+           rx*N[b*3]+hx*N[b*3+2],N[b*3+1],rz*N[b*3]+hz*N[b*3+2],
+           rx*N[c*3]+hx*N[c*3+2],N[c*3+1],rz*N[c*3]+hz*N[c*3+2]],
+        c:[tc[ti*3],tc[ti*3+1],tc[ti*3+2]],
+        vc:vcl?[vcl[a*3],vcl[a*3+1],vcl[a*3+2],
+                vcl[b*3],vcl[b*3+1],vcl[b*3+2],
+                vcl[c*3],vcl[c*3+1],vcl[c*3+2]]:null,
+        uv:[hu.uv[a*2],hu.uv[a*2+1],hu.uv[b*2],hu.uv[b*2+1],hu.uv[c*2],hu.uv[c*2+1]],
+        m:6, tile:faceCell, ao:1, glb:1});
+      continue;
+    }
     op.push({
       p:[[x+rx*P[a*3]+hx*P[a*3+2], gy+P[a*3+1], z+rz*P[a*3]+hz*P[a*3+2]],
          [x+rx*P[b*3]+hx*P[b*3+2], gy+P[b*3+1], z+rz*P[b*3]+hz*P[b*3+2]],
@@ -9339,10 +9637,16 @@ function glbPlace(op,ch,posed,x,z,gy,hx,hz){
       n:[rx*N[a*3]+hx*N[a*3+2],N[a*3+1],rz*N[a*3]+hz*N[a*3+2],
          rx*N[b*3]+hx*N[b*3+2],N[b*3+1],rz*N[b*3]+hz*N[b*3+2],
          rx*N[c*3]+hx*N[c*3+2],N[c*3+1],rz*N[c*3]+hz*N[c*3+2]],
-      c:[tc[ti*3],tc[ti*3+1],tc[ti*3+2]], m:0, tile:-1, ao:1, glb:1});
+      c:[tc[ti*3],tc[ti*3+1],tc[ti*3+2]],
+      /* the three corner colours, and the skin/cloth grain the
+         procedural figures have always had and the models opted out of */
+      vc:vcl?[vcl[a*3],vcl[a*3+1],vcl[a*3+2],
+              vcl[b*3],vcl[b*3+1],vcl[b*3+2],
+              vcl[c*3],vcl[c*3+1],vcl[c*3+2]]:null,
+      m:1, tile:(tt?tt[ti]:TILE.CLOTH), ao:1, glb:1});
   }
 }
-function glbDrawFigure(op,which,x,z,gy,hx,hz,walkT,gaitAmp,weapon,uid,kid){
+function glbDrawFigure(op,which,x,z,gy,hx,hz,walkT,gaitAmp,weapon,uid,kid,helm){
   var ch=GLB_IMPORTED[which]; if(!ch||!ch.skins||!ch.skins.length)return false;
   var walking=(gaitAmp||0)>0.12;
   var clip=glbClipName(ch,walking?"walk":"idle",which);
@@ -9353,6 +9657,7 @@ function glbDrawFigure(op,which,x,z,gy,hx,hz,walkT,gaitAmp,weapon,uid,kid){
   glbPlace(op,ch,posed,x,z,gy,hx,hz);
   /* a child carries nothing, and the grip offsets are adult-sized anyway */
   if(!kid&&weapon&&GLB_IMPORTED[weapon])glbAttachProp(op,ch,posed.W,weapon,"hand_r",x,z,gy,hx,hz,1.0);
+  if(!kid&&helm&&GLB_IMPORTED[helm])glbAttachProp(op,ch,posed.W,helm,"Head",x,z,gy,hx,hz,1.0);
   return true;
 }
 var GLB_GUARD_WEAPONS=["gild_sword","gild_claymore","gild_axe","gild_spear","gild_hammer_small"];
@@ -10743,7 +11048,8 @@ function glDynamic(){
     var mgy=footH(m.x,m.z)+(m.spot&&m.spot.y?m.spot.y:0);
     var _gw=glbForRole("walker",m.gender,m.uid);
     try{
-      if(_gw&&GLB_ELIGIBLE.has(m)&&glbDrawFigure(op,_gw,m.x,m.z,mgy,m.hx,m.hz,m.walkT,m.gaitAmp,null,m.uid,m.garb==="child")){ GLB_ROLE_N++; }
+      var _mh=(m.garb!=="child"&&((m.uid||0)%5)===0)?glbHelmFor(m.uid):null;
+      if(_gw&&GLB_ELIGIBLE.has(m)&&glbDrawFigure(op,_gw,m.x,m.z,mgy,m.hx,m.hz,m.walkT,m.gaitAmp,null,m.uid,m.garb==="child",_mh)){ GLB_ROLE_N++; }
       else throw 0;
     }catch(e){
     glPerson(op,m.x,m.z,mc,false,false,m.skin,m.walkT,m.gaitAmp,m.hx,m.hz,m.gender,false,
@@ -10864,6 +11170,27 @@ function glDynamic(){
   }
   if(G.road)for(i=0;i<G.road.length;i++){var rv=G.road[i];
     var rvy=footH(rv.x,rv.z);
+    /* Some of the traffic is a drover with stock behind him. They trail in
+       his wake rather than walking in lockstep: each beast sits at its own
+       distance and drifts side to side on its own phase, so three goats
+       read as three goats. Model-gated -- no asset, no herd, no change. */
+    if(!rv.cart&&((rv.uid||0)%4)===0){
+      var _hk=((rv.uid||0)%8)===0?"cattle":"goat";
+      var _herd=glbBeast(_hk,rv.uid||1)||glbBeast(_hk==="goat"?"sheep":"ox",rv.uid||1);
+      if(_herd){
+        var _n=2+((rv.uid||0)%3);
+        var _fx=rv.hx,_fz=rv.hz,_lx=-rv.hz,_lz=rv.hx;
+        for(var _b=0;_b<_n;_b++){
+          var _back=1.3+_b*0.95;
+          var _side=Math.sin((rv.walkT||0)*1.5+_b*2.1)*0.55;
+          var _bx=rv.x-_fx*_back+_lx*_side, _bz=rv.z-_fz*_back+_lz*_side;
+          try{
+            glbDrawFigure(op,_herd,_bx,_bz,groundH(_bx,_bz),_fx,_fz,
+                          (rv.walkT||0)+_b*0.7,rv.gaitAmp||0.4,null,(rv.uid||1)+_b*7);
+          }catch(e){}
+        }
+      }
+    }
     if(rv.cart){
       /* A cart is a vehicle, not a box trailing a man. It has shafts that
          actually reach something, an axle its wheels sit on, and sideboards.
@@ -10906,6 +11233,16 @@ function glDynamic(){
       var shaftLen=gap-cl*0.5-0.15;
       part(-cw*0.55,cl*0.5+shaftLen*0.5,0.13,shaftLen,bedY-0.06,bedY+0.06,[112,86,52]);
       part( cw*0.55,cl*0.5+shaftLen*0.5,0.13,shaftLen,bedY-0.06,bedY+0.06,[112,86,52]);
+      if(!heavy){
+        /* The light cart has always been a handcart the walker pulls. Put a
+           horse in the shafts if one exists, and the cart becomes a trap --
+           no fallback drawn, so without the asset nothing changes at all. */
+        var _hx2=rv.x-fwdx*1.5, _hz2=rv.z-fwdz*1.5;
+        var _horse=glbBeast("horse",rv.uid||5);
+        if(_horse){ try{
+          glbDrawFigure(op,_horse,_hx2,_hz2,groundH(_hx2,_hz2),fwdx,fwdz,rv.walkT,rv.gaitAmp||0.4,null,rv.uid||5);
+        }catch(e){} }
+      }
       if(heavy){
         /* the ox in the shafts, with the drover at its head */
         var oxx=rv.x-fwdx*1.9, oxz=rv.z-fwdz*1.9, oy=groundH(oxx,oxz);
@@ -10952,7 +11289,10 @@ function glDynamic(){
        rather than three copies of the same soldier */
     var _gr=glbForRole("guard",g.gender,g.uid), _gw2=glbGuardWeapon(g.uid);
     try{
-      if(_gr&&GLB_ELIGIBLE.has(g)&&glbDrawFigure(op,_gr,g.x,g.z,gy,g.hx,g.hz,g.walkT,g.gaitAmp,_gw2,g.uid)){
+      /* the watch go helmed whenever headgear exists; townsfolk mostly
+         bare-headed, a minority in a cap, keyed off uid so a given
+         neighbour keeps the same head from day to day */
+      if(_gr&&GLB_ELIGIBLE.has(g)&&glbDrawFigure(op,_gr,g.x,g.z,gy,g.hx,g.hz,g.walkT,g.gaitAmp,_gw2,g.uid,false,glbHelmFor(g.uid))){
         GLB_ROLE_N++;
         /* a shield in the off hand, but only for the one-handed weapons --
            a claymore, spear or war hammer takes both hands */
@@ -11176,6 +11516,10 @@ function drawGL(){
   gl.uniform1i(GLLOC.uTex,0);
   gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,glShadowTex);
   gl.uniform1i(GLLOC.uShadowMap,1);
+  if(glSkinTex){
+    gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,glSkinTex);
+    gl.uniform1i(GLLOC.uSkin,2);
+  }
   gl.disable(gl.BLEND);gl.depthMask(true);
   glDrawBatch(glStatic.o);glDrawBatch(glDyn.o);
   if(INK&&glDyn.k&&glDyn.k.n)glDrawBatch(glDyn.k);
