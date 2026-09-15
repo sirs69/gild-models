@@ -216,7 +216,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v6.062</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v6.063</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -7586,23 +7586,43 @@ function skinFaceTile(g,female){
     else g.lineTo(b[0],b[1]);
     g.stroke();
   }
-  var EYE=0.20, EY=0.615;
-  var brow=female?"rgba(96,72,54,0.85)":"rgba(74,54,38,0.92)";
+  /* Stylized on purpose: flat shapes with hard edges, like the buildings.
+     A softly shaded face on a 500-triangle egg reads as failed realism;
+     a graphic one reads as a choice. Positions are in the remapped v
+     space, where the model's own nose sits at 0.431. */
+  var EYE=0.215, EY=0.605, INK="rgba(38,30,26,1)";
   for(var side=-1;side<=1;side+=2){
     var eu=0.5+side*EYE;
-    blob(eu,EY,0.075,0.042,"rgba(158,124,98,0.35)");
-    blob(eu,EY,0.064,0.033,"rgba(238,234,226,0.98)");
-    blob(eu,EY,0.028,0.028,"rgba(88,102,84,0.98)");
-    blob(eu,EY,0.013,0.013,"rgba(14,11,9,0.99)");
-    line(eu-0.062,EY+0.034,eu+0.062,EY+0.034,"rgba(74,54,40,0.67)",2,-3);
-    line(eu-0.080,EY+0.086,eu+0.068,EY+0.092,brow,female?3.0:4.0,-4);
+    var pts=[[eu-0.105,EY+0.004],[eu-0.030,EY-0.050],[eu+0.080,EY-0.020],
+             [eu+0.092,EY+0.020],[eu-0.015,EY+0.054]];
+    g.beginPath();
+    for(var q=0;q<pts.length;q++){
+      var p=P(pts[q][0],pts[q][1]);
+      if(q===0)g.moveTo(p[0],p[1]); else g.lineTo(p[0],p[1]);
+    }
+    g.closePath();
+    g.fillStyle="rgba(246,242,234,1)"; g.fill();
+    g.strokeStyle=INK; g.lineWidth=4; g.stroke();
+    blob(eu+0.004,EY+0.002,0.036,0.036,INK);
+    /* brow: one tapered wedge, close over the eye */
+    var bw=[[eu-0.118,EY+0.072],[eu+0.096,EY+0.090],
+            [eu+0.096,EY+0.118],[eu-0.118,EY+0.110]];
+    g.beginPath();
+    for(q=0;q<bw.length;q++){
+      var r=P(bw[q][0],bw[q][1]);
+      if(q===0)g.moveTo(r[0],r[1]); else g.lineTo(r[0],r[1]);
+    }
+    g.closePath();
+    g.fillStyle=female?"rgba(86,62,44,1)":"rgba(62,44,32,1)"; g.fill();
   }
-  /* nose: a faint shadow, not a bar */
-  line(0.503,EY-0.020,0.496,EY-0.145,"rgba(156,120,94,0.24)",3,0);
-  blob(0.476,EY-0.160,0.013,0.008,"rgba(96,68,50,0.59)");
-  blob(0.524,EY-0.160,0.013,0.008,"rgba(96,68,50,0.59)");
-  line(0.370,EY-0.258,0.630,EY-0.258,female?"rgba(168,104,92,0.78)":"rgba(140,92,78,0.67)",
-       female?7.0:6.0,4);
+  line(0.502,EY-0.070,0.488,EY-0.160,"rgba(150,112,88,0.55)",3,0);
+  blob(0.470,EY-0.174,0.018,0.011,"rgba(104,74,54,0.86)");
+  blob(0.530,EY-0.174,0.018,0.011,"rgba(104,74,54,0.86)");
+  var mp=[P(0.372,EY-0.230),P(0.5,EY-0.218),P(0.628,EY-0.230)];
+  g.strokeStyle=female?"rgba(150,92,78,0.92)":"rgba(120,78,66,0.88)";
+  g.lineWidth=female?7.0:6.0; g.lineCap="round";
+  g.beginPath(); g.moveTo(mp[0][0],mp[0][1]);
+  g.quadraticCurveTo(mp[1][0],mp[1][1],mp[2][0],mp[2][1]); g.stroke();
   if(!female){
     for(i=0;i<1400;i++){
       var u=0.5+(Math.random()-0.5)*0.52, v=EY-0.330+Math.random()*0.160;
@@ -9184,12 +9204,34 @@ function glbHeadUVs(ch){
      than ear to ear, or the eyes end up out on the temples. */
   var cx=(minX+maxX)/2, halfW=Math.max((maxX-minX)*0.40,1e-4);
   var spanY=Math.max(maxY-minY,1e-4);
+  /* These heads DO have a nose -- a centre-line profile shows a local
+     peak standing over a centimetre out of the face -- so the paint is
+     anchored to it instead of to a guessed height. Search only the lower
+     middle of the head: a hood or a crown can stick out further than any
+     nose, and on the rangers it does.
+     The nose is found, then v is stretched so that peak lands exactly on
+     the painted nose, which puts eyes and mouth where the skull already
+     says they belong. */
+  var noseV=-1, bestZ=-1e9;
+  for(i=0;i<nv;i++){
+    if(!on[i])continue;
+    var vy=(prim.pos[i*3+1]-minY)/spanY;
+    if(vy<0.15||vy>0.60)continue;
+    if(Math.abs(prim.pos[i*3]-cx)>halfW*0.14)continue;   /* centre line */
+    if(prim.pos[i*3+2]>bestZ){ bestZ=prim.pos[i*3+2]; noseV=vy; }
+  }
+  var PAINT_NOSE=0.431, PAINT_CROWN=0.95, k=1.0, b=0.0;
+  if(noseV>0.05&&noseV<0.75){
+    k=(PAINT_CROWN-PAINT_NOSE)/Math.max(1-noseV,0.15);
+    b=PAINT_NOSE-noseV*k;
+  }
   for(i=0;i<nv;i++){
     if(!on[i])continue;
     /* mirrored in x: +x is the model's left, and the face is painted as seen */
     uv[i*2]=0.5-(prim.pos[i*3]-cx)/(2*halfW);
-    uv[i*2+1]=(prim.pos[i*3+1]-minY)/spanY;
+    uv[i*2+1]=((prim.pos[i*3+1]-minY)/spanY)*k+b;
   }
+  ch._noseV=noseV;
   ch._headUV={uv:uv,on:on};
   return ch._headUV;
 }
@@ -9661,7 +9703,7 @@ function glbPlace(op,ch,posed,x,z,gy,hx,hz){
         var ua=hu.uv[a*2],ub=hu.uv[b*2],uc=hu.uv[c*2];
         var va=hu.uv[a*2+1],vb=hu.uv[b*2+1],vc=hu.uv[c*2+1];
         if(ua>0.01&&ua<0.99&&ub>0.01&&ub<0.99&&uc>0.01&&uc<0.99&&
-           Math.min(va,vb,vc)>0.10)isFace=true;
+           Math.min(va,vb,vc)>0.04)isFace=true;
       }
     }
     if(isFace){
