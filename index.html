@@ -216,7 +216,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v6.071</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v6.075</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -553,18 +553,289 @@ function orderHit(ri,goYourself){
     /* They go now, on foot, from wherever they are standing. The old code
        set a flag and rolled for it the next morning with nobody present --
        you never saw the men you paid for do the thing you paid them for. */
-    var sent=0;
-    for(var i=0;i<(G.thugNpcs||[]).length;i++){
-      var t=G.thugNpcs[i];
-      if(t.inFight||t.cool>0)continue;
-      thugOrder(i,"sent",ri);
-      sent++;
-    }
+    var sent=thugOrderSel("sent",ri);
     if(!sent)return say("Not to hand","Your men are still lying low from the last of it.");
     note("Set "+sent+" man"+(sent>1?"":"")+" on House "+r.h+".");
     say("They go now",(sent>1?"Your men leave the yard":"Your man leaves the yard")+
       " and go looking for him. Follow if you want to see it done.\n\n"+
       "Whether it comes back to your name depends on what you have been paying them.");
+  }
+}
+/* ── the den, and the thieves in it ───────────────────────────────────
+   A thief is not a thug. Thugs break people; thieves take things, and they
+   work out of a den the way Guild 2 has it: a Smuggler's Den to start, a
+   Thieves' Den above that, a Thieves' Guild above that. The den is what
+   unlocks the men and what they are allowed to attempt, and it is where
+   they run when it goes wrong.
+     Pickpocketing -- low risk, moderate reward, any hour.
+     Burglary      -- high risk, high reward, and a job for the dark.
+     Kidnap        -- needs the second level; he is held for ransom.
+   Only a smuggler keeps a den. A baker with a thieves' guild is somebody
+   else's game. */
+var DEN_LEVELS=[
+  {n:"Smuggler's Den", cost:1400, men:2, d:"Pockets, and doors if you insist."},
+  {n:"Thieves' Den",   cost:3200, men:3, d:"Room to hold a man who is worth holding."},
+  {n:"Thieves' Guild", cost:7000, men:5, d:"Nothing in the town is quite out of reach."}
+];
+function denLvl(){ return (G.den&&G.den.lvl)||0; }
+function denName(){ return denLvl()?DEN_LEVELS[denLvl()-1].n:"no den"; }
+function denCap(){ return denLvl()?DEN_LEVELS[denLvl()-1].men:0; }
+function denCanKidnap(){ return denLvl()>=2; }
+function denAt(){
+  /* the den sits behind your own warehouse */
+  var b=null;
+  for(var i=0;i<B.length;i++)if(B[i].id===(G.shop&&G.shop.bId||"shop")){b=B[i];break;}
+  return b?{x:b.dx-2.2,z:b.dz-2.2}:{x:G.px,z:G.pz};
+}
+function denBuild(){
+  if(G.trade!=="smuggler")
+    return say("Not your trade","A den wants men who will not be missed and a reason for them to come and go. Your business is not that business.");
+  var nx=denLvl();
+  if(nx>=DEN_LEVELS.length)return say("Nothing above this","There is no larger house for this kind of work in Gild.");
+  var D=DEN_LEVELS[nx];
+  if(G.coin<D.cost)return say("Not enough",D.n+" wants "+fmt(D.cost)+".");
+  ask(nx?("Take it up to "+D.n+"?"):("Open a "+D.n+"?"),
+      D.d+"\n\n"+fmt(D.cost)+" now. Nobody writes it down.",
+      nx?"Take it up":"Open it",function(){
+    G.coin-=D.cost;
+    G.den=G.den||{lvl:0};
+    G.den.lvl=nx+1;
+    note(nx?("The den is now a "+D.n+"."):("Opened a "+D.n+"."));
+    layout();
+  });
+}
+function thiefWage(){ return 54; }
+function thiefHireCost(){ return 150+(G.thieves||0)*120; }
+function hireThief(){
+  if(!denLvl())return say("Nowhere to put him","A thief without a den is a man loitering in your yard.");
+  if((G.thieves||0)>=denCap())
+    return say("The den is full",denName()+" holds "+denCap()+". A larger house would hold more.");
+  var c=thiefHireCost();
+  if(G.coin<c)return say("Not enough","He wants "+fmt(c)+" to come in out of the rain.");
+  G.coin-=c; G.thieves=(G.thieves||0)+1;
+  syncThiefBodies();
+  note("Took on a thief."); layout();
+}
+function dismissThief(){
+  if(!G.thieves)return;
+  G.thieves--; syncThiefBodies();
+  note("Turned a thief out."); layout();
+}
+function syncThiefBodies(){
+  if(!G.thiefNpcs)G.thiefNpcs=[];
+  var want=Math.min(G.thieves||0,denCap());
+  G.thieves=want;
+  while(G.thiefNpcs.length>want)G.thiefNpcs.pop();
+  while(G.thiefNpcs.length<want){
+    var d=denAt();
+    G.thiefNpcs.push({x:d.x+(Math.random()-.5)*1.5,z:d.z+(Math.random()-.5)*1.5,
+      sp:1.25,c:[52,48,56],skin:rnd(0,SKINCOLORS.length-1),
+      walkT:0,gaitAmp:0,hx:0,hz:1,gender:0,
+      order:"idle", tx:null, tz:null, bId:null, ri:null, cool:0, took:0, sel:false});
+  }
+}
+function thiefSelected(){
+  var L=G.thiefNpcs||[], out=[];
+  for(var i=0;i<L.length;i++)if(L[i].sel)out.push(i);
+  if(!out.length)for(i=0;i<L.length;i++)out.push(i);
+  return out;
+}
+function thiefToggle(i){ var t=(G.thiefNpcs||[])[i]; if(t)t.sel=!t.sel; }
+function thiefSelectAll(on){ var L=G.thiefNpcs||[]; for(var i=0;i<L.length;i++)L[i].sel=!!on; }
+function thiefToDen(t,why){
+  var d=denAt();
+  t.order="hiding"; t.tx=d.x; t.tz=d.z; t.bId=null; t.ri=null; t.cool=120;
+  if(why)note(why);
+}
+function thiefOrder(i,order,arg){
+  var t=(G.thiefNpcs||[])[i]; if(!t)return;
+  t.order=order; t.cool=0; t.bId=null; t.ri=null;
+  if(order==="lifting"){ t.tx=G.px; t.tz=G.pz; }
+  else if(order==="burgling"){ t.bId=arg; }
+  else if(order==="snatching"){ t.ri=arg; }
+  else { var d=denAt(); t.tx=d.x; t.tz=d.z; }
+}
+function thiefOrderSel(order,arg){
+  var sel=thiefSelected(), n=0;
+  for(var k=0;k<sel.length;k++){
+    var t=G.thiefNpcs[sel[k]];
+    if(t.inFight||t.cool>0)continue;
+    thiefOrder(sel[k],order,arg); n++;
+  }
+  return n;
+}
+/* pockets: moderate, constant, and the risk is simply being watched */
+function thiefLift(t,dt){
+  t.cool=Math.max(0,(t.cool||0)-dt);
+  if(t.cool>0)return;
+  var lists=[G.npcs||[],G.road||[]];
+  for(var L=0;L<lists.length;L++){
+    for(var i=0;i<lists[L].length;i++){
+      var m=lists[L][i];
+      if(!m||m.inside||m.inFight)continue;
+      if(Math.hypot(m.x-t.x,m.z-t.z)>1.8)continue;
+      var purse=(m.purse!=null)?m.purse:rnd(8,34);
+      var take=Math.max(1,Math.min(purse,Math.round(4+purse*0.22)));
+      if(m.purse!=null)m.purse=Math.max(0,m.purse-take);
+      G.coin+=take; t.took=(t.took||0)+take;
+      t.cool=24+rnd(0,16);
+      var seen=0.09+(watchSees(t.x,t.z)?0.40:0)+((G.t>7&&G.t<19)?0.09:0);
+      if(Math.random()<seen){
+        G.heat=clamp(G.heat+8,0,100);
+        raiseHueAndCry(t.x,t.z,1);
+        thiefToDen(t,"A thief was spotted at a pocket and ran for the den.");
+      }
+      return;
+    }
+  }
+}
+/* a door: worth far more than a pocket, and far likelier to end badly */
+function thiefBurgle(t){
+  var b=null;
+  for(var i=0;i<B.length;i++)if(B[i].id===t.bId){b=B[i];break;}
+  if(!b){ thiefToDen(t,null); return; }
+  var night=(G.t>20||G.t<5);
+  var haul=Math.round((80+rnd(0,220))*(b.ownerRival!=null?1.6:1.0));
+  var caught=night?0.18:0.46;
+  if(watchSees(t.x,t.z))caught+=0.30;
+  if(Math.random()<caught){
+    G.heat=clamp(G.heat+16,0,100);
+    raiseHueAndCry(t.x,t.z,1);
+    if(Math.random()<0.34&&G.thieves>0){
+      G.thieves--; syncThiefBodies();
+      note("A thief was taken at the door and did not come home.");
+      return;
+    }
+    thiefToDen(t,"A thief was disturbed at a door and got out with nothing.");
+    return;
+  }
+  G.coin+=haul; t.took=(t.took||0)+haul;
+  if(b.ownerRival!=null){
+    var rr=G.rivals[b.ownerRival];
+    if(rr){ rr.coin=Math.max(0,(rr.coin||0)-haul); rr.grudge=(rr.grudge||0)+2; }
+  }
+  note("A thief came out of "+(b.n||"a house")+" with "+fmt(haul)+".");
+  thiefToDen(t,null);
+}
+/* a man in the cellar is worth more than his purse */
+function thiefSnatch(t){
+  var ri=t.ri, r=G.rivals[ri];
+  if(!r||!denCanKidnap()){ thiefToDen(t,null); return; }
+  var man=headOf(ri);
+  if(!man){ thiefToDen(t,"Your thief could not find him."); return; }
+  /* a man already beaten senseless is easy to carry; a man on his feet
+     has to be taken, which usually fails */
+  var down=(r.down>G.day*DAYH+G.t);
+  var odds=down?0.88:clamp(0.22-r.t*0.04-(r.thugs||0)*0.05,0.05,0.5);
+  if(Math.random()<odds){
+    if(!G.prisoners)G.prisoners=[];
+    var ransom=Math.round(600+r.t*700+(r.coin||0)*0.25);
+    G.prisoners.push({ri:ri,h:r.h,ransom:ransom,health:100,taken:G.day});
+    r.down=0;
+    removeNpc(man);
+    note("House "+r.h+"'s head is in your cellar.");
+    say("He is in the cellar","Nobody saw him go in and nobody knows who has him.\n\n"+
+        "While he is down there his house does nothing: no growth, no men on the road, no voice in the chamber. "+
+        "He is worth about "+fmt(ransom)+" if you ever choose to ask for it. "+
+        "If you do not, he keeps until he doesn't.");
+  } else {
+    G.heat=clamp(G.heat+14,0,100);
+    note("The snatch failed. He got away shouting.");
+    r.grudge=(r.grudge||0)+3;
+  }
+  thiefToDen(t,null);
+}
+/* Nothing about a man in a cellar is public. No heat: there is no body in
+   the road, no witness, no charge -- his house does not know who has him,
+   only that he did not come home. What the cellar does is take him out of
+   the game, and then slowly kill him if you leave him there. */
+function prisonerDay(){
+  if(!G.prisoners||!G.prisoners.length)return;
+  for(var i=G.prisoners.length-1;i>=0;i--){
+    var p=G.prisoners[i];
+    p.health=Math.max(0,(p.health==null?100:p.health)-rnd(5,11));
+    if(p.health<=0){
+      note("House "+p.h+"'s head died in your cellar.");
+      /* he is simply gone, and nobody can say where: no charge follows */
+      if(p.ri!=null)hitSucceeded(p.ri,true);
+      G.prisoners.splice(i,1);
+      continue;
+    }
+    if(p.health<35&&!p.warned){
+      p.warned=true;
+      note("The man in your cellar is failing.");
+    }
+  }
+}
+/* Asking for money is your move, not an appointment. A house pays what it
+   has; a poor one cannot pay at all, and then he is just a man you are
+   feeding. */
+function prisonerRansom(idx){
+  var p=(G.prisoners||[])[idx]; if(!p)return;
+  var r=(p.ri!=null)?G.rivals[p.ri]:null;
+  var able=r?Math.min(p.ransom,Math.max(0,Math.round(r.coin||0))):p.ransom;
+  if(able<=0)
+    return say("They have nothing","Word goes to House "+p.h+" and comes back empty. There is no money in that house to buy him with.");
+  ask("Send word to House "+p.h+"?",
+      "They will be told where to leave it and nothing else.\n\n"+
+      (able<p.ransom?("They can raise about "+fmt(able)+" of the "+fmt(p.ransom)+" he is worth."):
+                     ("He is worth "+fmt(p.ransom)+" and they can find it."))+
+      "\n\nTake it and he walks home.",
+      "Take it",function(){
+    if(r)r.coin=Math.max(0,(r.coin||0)-able);
+    G.coin+=able;
+    if(r)r.grudge=(r.grudge||0)+4;
+    note("House "+p.h+" paid "+fmt(able)+" and their head walked home.");
+    var k=G.prisoners.indexOf(p); if(k>=0)G.prisoners.splice(k,1);
+    layout();
+  });
+}
+function prisonerRelease(idx){
+  var p=(G.prisoners||[])[idx]; if(!p)return;
+  var r=(p.ri!=null)?G.rivals[p.ri]:null;
+  if(r)r.grudge=(r.grudge||0)+3;
+  note("You turned House "+p.h+"'s head loose.");
+  G.prisoners.splice(idx,1);
+  layout();
+}
+/* a man in a cellar runs nothing */
+function rivalHeld(ri){
+  var P=G.prisoners||[];
+  for(var i=0;i<P.length;i++)if(P[i].ri===ri)return true;
+  return false;
+}
+function stepThieves(dt){
+  syncThiefBodies();
+  var L=G.thiefNpcs||[];
+  for(var i=0;i<L.length;i++){
+    var t=L[i];
+    if(t.inFight)continue;
+    t.cool=Math.max(0,(t.cool||0)-dt);
+    if(t.order==="burgling"){
+      var b=null;
+      for(var k=0;k<B.length;k++)if(B[k].id===t.bId){b=B[k];break;}
+      if(!b){ thiefToDen(t,null); continue; }
+      t.tx=b.dx; t.tz=b.dz;
+      if(Math.hypot(b.dx-t.x,b.dz-t.z)<1.3){ thiefBurgle(t); continue; }
+    } else if(t.order==="snatching"){
+      var man=headOf(t.ri);
+      if(!man){ thiefToDen(t,"Your thief could not find him."); continue; }
+      t.tx=man.x; t.tz=man.z;
+      if(Math.hypot(man.x-t.x,man.z-t.z)<1.4){ thiefSnatch(t); continue; }
+    } else if(t.order==="lifting"){
+      thiefLift(t,dt);
+    }
+    if(t.tx==null)continue;
+    var dx=t.tx-t.x, dz=t.tz-t.z, dd=Math.hypot(dx,dz);
+    if(dd>0.6){
+      var amt=t.sp*dt;
+      slideTo(t,t.x+dx/dd*amt,t.z+dz/dd*amt);
+      t.hx=dx/dd;t.hz=dz/dd;t.walkT=(t.walkT||0)+amt;
+      t.gaitAmp=(t.gaitAmp||0)+(1-(t.gaitAmp||0))*Math.min(1,dt*8);
+    } else {
+      t.gaitAmp=(t.gaitAmp||0)*Math.max(0,1-dt*6);
+      if(t.order==="hiding"&&t.cool<=0)t.order="idle";
+    }
   }
 }
 /* ── your men, as men ─────────────────────────────────────────────────
@@ -573,9 +844,12 @@ function orderHit(ri,goYourself){
    standing in your yard that you point at something and watch. Each thug
    on the roll has an entity here. He takes an order, walks there, does
    the thing where you can see it, and runs home if it goes badly.
-     posted  -- stands a beat and lifts purses off whoever passes
+     asking  -- leans on whoever passes until somebody says something
      sent    -- walks at the head of a named house and fights him, now
-     idle    -- waits at your door */
+     idle    -- waits at your door
+   Note these are a THUG's verbs, not a thief's. Thugs do not steal:
+   pickpocketing, burglary and kidnap belong to thieves out of a den, and
+   are a separate unit still to be built. */
 function thugHome(){
   var b=null;
   for(var i=0;i<B.length;i++)if(B[i].id===(G.shop&&G.shop.bId||"shop")){b=B[i];break;}
@@ -597,37 +871,72 @@ function syncThugBodies(){
 function thugOrder(idx,order,ri){
   var t=(G.thugNpcs||[])[idx]; if(!t)return;
   t.order=order; t.ri=(ri==null?null:ri); t.cool=0;
-  if(order==="posted"){ t.tx=G.px; t.tz=G.pz; }
+  if(order==="asking"){ t.tx=G.px; t.tz=G.pz; }
   else if(order==="idle"){ var h=thugHome(); t.tx=h.x; t.tz=h.z; }
+}
+/* ── selection ────────────────────────────────────────────────────────
+   They are units, so they are selected and ordered like units: pick men,
+   then give one order to all of them. An empty selection means everybody,
+   which is what you want nine times out of ten. */
+function thugSelected(){
+  var L=G.thugNpcs||[], out=[];
+  for(var i=0;i<L.length;i++)if(L[i].sel)out.push(i);
+  if(!out.length)for(i=0;i<L.length;i++)out.push(i);
+  return out;
+}
+function thugToggle(idx){
+  var t=(G.thugNpcs||[])[idx]; if(!t)return;
+  t.sel=!t.sel;
+}
+function thugSelectAll(on){
+  var L=G.thugNpcs||[];
+  for(var i=0;i<L.length;i++)L[i].sel=!!on;
+}
+function thugOrderSel(order,ri){
+  var sel=thugSelected(), n=0;
+  for(var k=0;k<sel.length;k++){
+    var t=G.thugNpcs[sel[k]];
+    if(t.inFight||t.cool>0)continue;
+    thugOrder(sel[k],order,ri);
+    n++;
+  }
+  return n;
 }
 function thugSendHome(t,why){
   var h=thugHome();
   t.order="idle"; t.tx=h.x; t.tz=h.z; t.ri=null; t.cool=140;
   if(why)note(why);
 }
-/* a posted man lifts from whoever comes close enough, on a cooldown, and
-   is caught by the odds the street gives him rather than by a die roll
-   made somewhere else */
-function thugLift(t,dt){
+/* Asking around: a thug leans on people until somebody says something
+   useful. In Gild the one name that decides a trial is the private man who
+   laid the charge -- the bench's own officers always turn up, he does not
+   have to. So what a thug brings back is that name, and after that he can
+   be pointed at him. */
+function thugAsk(t,dt){
   t.cool=Math.max(0,(t.cool||0)-dt);
   if(t.cool>0)return;
-  var lists=[G.npcs||[],G.road||[]];
+  var lists=[G.npcs||[]];
   for(var L=0;L<lists.length;L++){
     for(var i=0;i<lists[L].length;i++){
       var m=lists[L][i];
       if(!m||m.inside||m.inFight)continue;
-      if(Math.hypot(m.x-t.x,m.z-t.z)>1.8)continue;
-      var purse=(m.purse!=null)?m.purse:rnd(8,34);
-      var take=Math.max(1,Math.min(purse,Math.round(4+purse*0.22)));
-      if(m.purse!=null)m.purse=Math.max(0,m.purse-take);
-      G.coin+=take; t.lifted=(t.lifted||0)+take;
-      t.cool=26+rnd(0,18);
-      /* being seen is the whole risk: the watch nearby, and daylight */
-      var seen=0.10+(watchSees(t.x,t.z)?0.42:0)+((G.t>7&&G.t<19)?0.10:0);
+      if(Math.hypot(m.x-t.x,m.z-t.z)>2.0)continue;
+      t.cool=40+rnd(0,30);
+      /* leaning on a burgher in the open is itself a small crime */
+      var seen=0.08+(watchSees(t.x,t.z)?0.34:0);
       if(Math.random()<seen){
-        G.heat=clamp(G.heat+9,0,100);
-        raiseHueAndCry(t.x,t.z,1);
-        thugSendHome(t,"One of your men was seen at it and bolted.");
+        G.heat=clamp(G.heat+6,0,100);
+        thugSendHome(t,"One of your men was warned off for putting questions.");
+        return;
+      }
+      if(G.trial&&!G.trial.accuserKnown&&Math.random()<0.34){
+        G.trial.accuserKnown=true;
+        note("Your men have a name: "+G.trial.accuser+" laid the charge.");
+        return;
+      }
+      if(Math.random()<0.22){
+        t.heard=(t.heard||0)+1;
+        note("Your men are told nothing worth the trouble.");
       }
       return;
     }
@@ -648,7 +957,7 @@ function stepThugs(dt){
       var d=Math.hypot(man.x-t.x,man.z-t.z);
       if(d<1.4){ thugStrike(t,i); continue; }
     }
-    if(t.order==="posted")thugLift(t,dt);
+    if(t.order==="asking")thugAsk(t,dt);
     if(t.tx==null)continue;
     var dx=t.tx-t.x, dz=t.tz-t.z, dd=Math.hypot(dx,dz);
     if(dd>0.6){
@@ -671,9 +980,18 @@ function thugStrike(t,idx){
   var odds=clamp(0.26+mine*0.14-r.t*0.06-(r.thugs||0)*0.05,0.08,0.86);
   var won=Math.random()<odds;
   if(won){
-    note("Your men put House "+r.h+"'s head down in the street.");
-    hitSucceeded(ri,false);
-  } else {
+    /* A beating is not a killing. Your men leave him in the road and it is
+       then YOUR decision whether he gets up -- which is the whole shape of
+       it in Guild 2, and the difference between an affray and a hanging. */
+    r.down=G.day*DAYH+G.t+rnd(4,9);
+    note("Your men put House "+r.h+"'s head down in the street. He is not dead.");
+    say("He is down","Your men stand over him. He is breathing, and in no state to walk home.\n\n"+
+        "Leave him and he comes round in a few hours with a grudge. Finish it and there is no House "+r.h+" -- and a body somebody may hang you for.",
+        null);
+    thugSendHome(t,null);
+    return;
+  }
+  if(false){} else {
     note("Your men were beaten off by House "+r.h+".");
     r.grudge=(r.grudge||0)+2;
     if(Math.random()<0.42&&G.thugs>0){
@@ -695,6 +1013,33 @@ function thugStrike(t,idx){
     }
   }
   thugSendHome(t,null);
+}
+/* Finishing off a man your men already put down. Separate from the
+   beating on purpose: killing is the part that hangs you. */
+function thugFinish(ri){
+  var r=G.rivals[ri]; if(!r)return;
+  if(!(r.down>G.day*DAYH+G.t))
+    return say("He is on his feet","Whatever your men did to him, he has walked it off. It would have to be done again.");
+  if(!G.thugs)return say("Nobody to send","You have no men on the roll.");
+  ask("Finish it?","He is face down in the road and cannot lift his head.\n\n"+
+      "There is no undoing this, and a dead head of house is a name the bench will ask about.",
+      "Finish it",function(){
+    note("House "+r.h+" is finished in the street.");
+    hitSucceeded(ri,false);
+    /* a killing in the open is far harder to keep off your name than a beating */
+    if(Math.random()<0.80){
+      if(Math.random()*100>(G.thugLoyal||0)){
+        note("Your man was taken up, and he gave your name.");
+        G.heat=clamp(G.heat+34,0,100);
+        if(!G.trial)summon("murder",rnd(2,4));
+      } else {
+        note("Your man was taken up. He said nothing.");
+        G.heat=clamp(G.heat+12,0,100);
+        G.thugLoyal=Math.max(0,(G.thugLoyal||0)-8);
+      }
+    }
+    layout();
+  });
 }
 /* resolved the following day, out of sight */
 function thugJobDay(){
@@ -1370,6 +1715,8 @@ function houseGrowDay(){
     if(!r||!r.trade)continue;
     /* a house refused its charter cannot grow while the refusal stands */
     if(G.motions&&G.motions.charters&&G.motions.charters[i]>G.day)continue;
+    /* nor can one whose head is in somebody's cellar */
+    if(rivalHeld(i))continue;
     /* At the old 6%-a-day chance and a 0.004 step, a house needed roughly
        2000 days -- 85 years -- to walk from its starting ~13% up to the old
        0.62 cap. It was never going to get there: not a rare event, a rate
@@ -1431,6 +1778,7 @@ function houseThugDay(){
   for(var i=0;i<G.rivals.length;i++){
     var r=G.rivals[i];
     if(!r||!r.trade)continue;
+    if(rivalHeld(i))continue;          /* nobody is signing anything */
     var cap=1+r.t;
     if((r.thugs||0)>=cap)continue;
     var cost=180+(r.thugs||0)*140;      /* same shape as the player's own hire */
@@ -1460,6 +1808,7 @@ function houseBuildDay(){
       }
       continue;
     }
+    if(rivalHeld(i))continue;
     if(r.coin<HOUSE_PLOT)continue;
     if(rivalPlots(i)>=2)continue;                 /* two apiece is plenty */
     if(Math.random()>0.04)continue;
@@ -1701,6 +2050,7 @@ function newGame(name,trade,look){
     rivalry:{}, rivalCd:{}, support:{}, canvassed:{}, motions:{toll:0,assize:null,charters:{}},
     council:null, vacancy:null, sitting:null, ill:null, approach:null,
     thugs:0, thugWage:THUG_BASE, thugLoyal:0, thugJob:null, thugNpcs:[],
+    den:null, thieves:0, thiefNpcs:[], prisoners:[],
     t:8, day:0,                       /* t = hour of day */
     bag:bag, cap:20, cart:0, road:[], robbers:[], robberCd:0, path:[], carterNpcs:[], mkt:mkt, mkt2:mkt2,
     sup:{0:{},1:{}}, deeds:{},
@@ -2432,6 +2782,7 @@ function stepRoad(dt){
   spawnRobbers(dt);
   spawnHouseThugs(dt);
   stepThugs(dt);
+  stepThieves(dt);
   for(var i=G.road.length-1;i>=0;i--){
     var r=G.road[i];
     r.along+=r.dir*r.sp*dt;
@@ -2521,6 +2872,7 @@ function spawnHouseThugs(dt){
   for(var i=0;i<(G.rivals||[]).length;i++){
     var r=G.rivals[i];
     if(!r||!(r.thugs>0)||!(r.grudge>=4))continue;
+    if(rivalHeld(i))continue;          /* his men have no orders from him */
     var odds=0.0009*Math.min(r.grudge,10);
     if(Math.random()>=odds*dt)continue;
     var ahead=rn.along+(Math.random()<0.5?1:-1)*rnd(16,26);
@@ -5358,7 +5710,10 @@ var ROOMS={
   /* low, because it is under the hall. A tall gaol is not a gaol. */
   /* Fourteen metres by sixteen is a barn. A cell under a town hall is a
      room you can touch both walls of. */
-  gaol:  {w:9,d:11,h:2.9, mind:2.6, maxd:5.4, sub:"The cells", bare:1}
+  /* Depth 7.5, not 11: once the cells stopped being the far third of the
+     floor the leftover corridor was nearly nine metres of nothing. The
+     watch's end wants a table and standing room, not a hall. */
+  gaol:  {w:9,d:7.5,h:2.9, mind:2.4, maxd:5.0, sub:"The cells", bare:1}
 };
 /* hearths and candles light a room from inside it. LAMPS does the same job
    out in the street, but the street's list is only fed to the shader after
@@ -6013,53 +6368,64 @@ function buildRoomGeo(kind){
     wallTorch(-W/2+.35,-1,2.6); wallTorch(W/2-.35,-1,2.6);
     wallTorch(-W/2+.35,D/2-4,2.6); wallTorch(W/2-.35,D/2-4,2.6);
   } else if(kind==="gaol"){
-    /* Two thirds of the room is where the watch stand about. The far third
-       is the cell, cut off by a wall of bars from floor to ceiling with a
-       gate in it. You can walk right up to the bars and no further. */
+    /* Three cells off a corridor, not one room with a fence across it.
+       The old layout gave the far third of the whole floor to a single
+       cell -- nine metres by four, which is a hall with chains in it. A
+       cell is a place a man cannot lie down straight in. Each of these is
+       about two and a half metres square, divided by stone, with its own
+       barred front and its own gate. */
     var wet=[96,94,92];
     roomShell(R,wet,panel,[78,76,72],0);
-    /* measured as a share of the room, not in metres off a plan that no
-       longer exists: the cell is the far third whatever size the room is */
-    var barZ=-D/2+D*0.35;
     var iron=[88,82,76];
-    /* the bars: uprights every hand's breadth, with a rail top and bottom */
-    for(var bx=-W/2+0.5;bx<=W/2-0.5;bx+=0.34){
-      var inGate=(bx>-1.3&&bx<1.3);
-      if(inGate)continue;
-      boxG(bx,barZ,0.11,0.11,0,H,sh(iron,((bx*10|0)%2)?0.94:1.06));
+    var CELLD=2.3;                       /* how deep a cell is */
+    var barZ=-D/2+CELLD;                 /* the bars, close to the back wall */
+    var NCELL=3;
+    var divW=0.34;                       /* stone between cells */
+    var span=(W-1.0);                    /* usable width */
+    var cw=(span-divW*(NCELL-1))/NCELL;  /* each cell's inside width */
+    var x0=-span/2;
+    /* the dividing walls, back wall to the bars */
+    for(var dv=1;dv<NCELL;dv++){
+      var dx=x0+dv*cw+(dv-0.5)*divW;
+      boxG(dx,-D/2+CELLD/2,divW,CELLD,0,H,sh(wet,0.92));
+      roomSolid(dx,-D/2+CELLD/2,divW,CELLD,"wall");
     }
-    boxG(0,barZ,W-0.8,0.16,H-0.34,H-0.16,sh(iron,0.86));
-    boxG(0,barZ,W-0.8,0.16,0.02,0.20,sh(iron,0.80));
-    /* the gate: a frame of bars, shut, with a lock plate */
-    for(var gx=-1.25;gx<=1.25;gx+=0.31)boxG(gx,barZ,0.10,0.13,0,2.5,sh(iron,1.02));
-    boxG(0,barZ,2.7,0.17,2.5,2.72,sh(iron,0.88));
-    boxG(1.25,barZ,0.20,0.24,0,2.72,sh(iron,0.74));
-    boxG(-1.25,barZ,0.20,0.24,0,2.72,sh(iron,0.74));
-    boxG(1.02,barZ+0.10,0.30,0.14,1.05,1.45,[62,56,50]);   /* the lock */
-    /* the bars are solid: you get to them and stop */
-    roomSolid(-W/4-0.7,barZ,W/2-1.4,0.5);
-    roomSolid( W/4+0.7,barZ,W/2-1.4,0.5);
-    roomSolid(0,barZ,2.7,0.5,"bars");
-    /* inside the cell: chains on three walls, straw, a slop bucket */
-    for(var ch=0;ch<3;ch++){
-      wallChain(-W/2+0.35,-D/2+D*0.09+ch*(D*0.09),Math.min(2.15,H-0.5),1,0,4,1.25);
-      wallChain( W/2-0.35,-D/2+D*0.11+ch*(D*0.09),Math.min(2.15,H-0.5),-1,0,4,1.25);
+    /* each cell: a barred front with a narrow gate, and what is inside it */
+    for(var ci=0;ci<NCELL;ci++){
+      var cx=x0+ci*(cw+divW)+cw/2;       /* centre of this cell */
+      var gateW=0.86;                    /* a man's width, no more */
+      /* uprights across the front, skipping the gate */
+      for(var bx=cx-cw/2+0.08;bx<=cx+cw/2-0.08;bx+=0.28){
+        if(bx>cx-gateW/2&&bx<cx+gateW/2)continue;
+        boxG(bx,barZ,0.10,0.10,0,H,sh(iron,((bx*10|0)%2)?0.94:1.06));
+      }
+      boxG(cx,barZ,cw,0.14,H-0.32,H-0.14,sh(iron,0.86));
+      boxG(cx,barZ,cw,0.14,0.02,0.18,sh(iron,0.80));
+      /* the gate itself, shut */
+      for(var gx=cx-gateW/2+0.06;gx<=cx+gateW/2-0.06;gx+=0.26)
+        boxG(gx,barZ,0.09,0.12,0,2.2,sh(iron,1.02));
+      boxG(cx,barZ,gateW,0.15,2.2,2.40,sh(iron,0.88));
+      boxG(cx-gateW/2,barZ,0.17,0.21,0,2.40,sh(iron,0.74));
+      boxG(cx+gateW/2,barZ,0.17,0.21,0,2.40,sh(iron,0.74));
+      boxG(cx+gateW/2-0.20,barZ+0.09,0.24,0.12,1.02,1.34,[62,56,50]);   /* lock */
+      /* the bars stop you: one solid line across this cell's front */
+      roomSolid(cx,barZ,cw,0.45,"bars");
+      /* inside: a chain on the back wall, straw, a bucket. Room for
+         nothing else, which is the point. */
+      wallChain(cx,-D/2+0.30,Math.min(2.10,H-0.5),0,1,3+ci,1.05);
+      boxG(cx-cw/2+0.55,-D/2+0.70,0.95,0.50,0,0.24,[92,74,52],0,TILE.PLANK);
+      roomSolid(cx-cw/2+0.55,-D/2+0.70,0.95,0.50,"pallet");
+      if(ci!==1)barrelG(cx+cw/2-0.32,-D/2+0.45,0.34);
     }
-    wallChain(-W*0.26,-D/2+0.35,Math.min(2.20,H-0.5),0,1,5,1.55);
-    wallChain( W*0.26,-D/2+0.35,Math.min(2.20,H-0.5),0,1,3,0.95);
-    barrelG(W/2-1.1,-D/2+0.9,0.52);                        /* the bucket */
-    boxG(-W/2+1.2,-D/2+1.0,1.6,0.6,0,0.30,[92,74,52],0,TILE.PLANK);
-    roomSolid(-W/2+1.2,-D/2+1.0,1.6,0.6,"pallet");
-    /* outside the bars: the watch's end. A table, a stool, one torch. */
-    boxG(-W/2+1.8,D/2-D*0.26,1.9,1.0,0,0.82,[96,72,46],0,TILE.PLANK);
-    roomSolid(-W/2+1.8,D/2-D*0.26,1.9,1.0,"table");
-    boxG(-W/2+3.1,D/2-D*0.26,0.55,0.55,0,0.52,[86,64,42]);
-    boxG(W/2-1.1,D/2-D*0.20,0.8,0.8,0,1.00,[110,86,56],0,TILE.PLANK);
-    wallChain(W/2-0.35,D/2-D*0.40,Math.min(2.20,H-0.5),-1,0,3,0.95);
-    /* light: one torch either side of the bars and nothing in the cell,
-       so the cell is the dark end of a dark room */
-    wallTorch(-W/2+0.42,barZ+2.2,2.0);
-    wallTorch( W/2-0.42,barZ+2.4,2.0);
+    /* the corridor: the watch's end, a table and a stool against the side */
+    boxG(-W/2+1.8,D/2-D*0.24,1.9,1.0,0,0.82,[96,72,46],0,TILE.PLANK);
+    roomSolid(-W/2+1.8,D/2-D*0.24,1.9,1.0,"table");
+    boxG(-W/2+3.1,D/2-D*0.24,0.55,0.55,0,0.52,[86,64,42]);
+    boxG(W/2-1.1,D/2-D*0.18,0.8,0.8,0,1.00,[110,86,56],0,TILE.PLANK);
+    wallChain(W/2-0.35,D/2-D*0.38,Math.min(2.20,H-0.5),-1,0,3,0.95);
+    /* light in the corridor only, so the cells are the dark side of it */
+    wallTorch(-W/2+0.42,barZ+1.6,2.0);
+    wallTorch( W/2-0.42,barZ+1.9,2.0);
     wallTorch( W/2-0.42,D/2-2.6,2.0);
   } else if(kind==="church"){
     roomShell(R,[152,148,138],[116,110,98],[156,152,142],1.3);
@@ -11597,6 +11963,12 @@ function glDynamic(){
     var rby=footH(rb.x,rb.z);
     glPerson(op,rb.x,rb.z,rb.c,false,false,rb.skin,rb.walkT,rb.gaitAmp,rb.hx,rb.hz,0,false,rby,rb.uid||4,0,0,"hooded");
     shadowBlob(bl,rb.x,rby+.003,rb.z,.5,0.30);}
+  /* thieves: darker coats, and they keep to themselves */
+  if(G.thiefNpcs)for(i=0;i<G.thiefNpcs.length;i++){var th=G.thiefNpcs[i];
+    if(FIGHT&&!FIGHT.over&&FIGHT.foe===th)continue;
+    var thy=footH(th.x,th.z);
+    glPerson(op,th.x,th.z,th.c,false,false,th.skin,th.walkT,th.gaitAmp,th.hx,th.hz,0,false,thy,th.uid||8,0,0,"hooded");
+    shadowBlob(bl,th.x,thy+.003,th.z,.5,0.30);}
   /* your own men, standing about your door or out on a piece of work */
   if(G.thugNpcs)for(i=0;i<G.thugNpcs.length;i++){var tg=G.thugNpcs[i];
     if(FIGHT&&!FIGHT.over&&FIGHT.foe===tg)continue;
@@ -13360,6 +13732,8 @@ function newDay(){
       continue;
     }
     var p=r.pers||"grasping";
+    /* a head in a cellar earns nothing, buys no rank and schemes at nobody */
+    if(rivalHeld(i))continue;
     r.coin+=Math.round((rnd(40,150)+r.t*40)*(COINMUL[p]||1));
     if(r.t<TITLES.length-1&&r.coin>TITLES[r.t+1].cost*(TITLEMUL[p]||1)&&r.rep>=TITLES[r.t+1].rep){
       r.coin-=TITLES[r.t+1].cost;r.t++;
@@ -13411,6 +13785,7 @@ function newDay(){
   rentDay();
   thugDay();
   thugJobDay();
+  prisonerDay();
   illnessDay();
   if(G.day%DAYS_PER_YEAR===0)newYear();
   save();
@@ -13941,6 +14316,7 @@ function newLine(carried){
   refreshMatches();          /* somebody is always about; you never wait a year */
   G.office=null; G.officeDays=0;
   G.thugs=0; G.thugLoyal=0; G.thugJob=null; G.thugNpcs=[];
+  G.thieves=0; G.thiefNpcs=[]; G.prisoners=[];
   G.deeds={}; G.homeId=null;
   G.shops=[{store_in:0,store_out:0,prog:0,workers:0,carters:0,lvl:1,
             walkIns:0,walkCoin:0,bId:"shop",trade:G.trade}];
@@ -16269,22 +16645,103 @@ function drawHere(){
       if((G.thugs||0)<thugCap())
         h+='<button class="btn sm" onclick="hireThug()">Take a man on &middot; '+fmt(thugHireCost())+'</button>';
       if(G.thugs)h+='<button class="btn sm" onclick="dismissThug()">Let one go</button>';
-      /* each man on the roll, and what he is doing about it */
+      /* each man on the roll: tick the ones you want, then give one order
+         to all of them. Nothing ticked means all of them. */
       if(G.thugs){
         syncThugBodies();
-        h+='<p class="fine" style="margin-top:8px">Your men, and where they are:</p>';
+        var sel=thugSelected();
+        h+='<p class="fine" style="margin-top:8px">Your men &mdash; tick to pick, then order:</p>';
         for(var tq=0;tq<(G.thugNpcs||[]).length;tq++){
           var tt=G.thugNpcs[tq];
-          var what=tt.order==="posted"?("on a beat"+(tt.lifted?" &middot; "+fmt(tt.lifted)+" lifted":"")):
+          var what=tt.order==="asking"?"putting questions":
                    tt.order==="sent"?("out after House "+((G.rivals[tt.ri]||{}).h||"?")):
                    (tt.cool>0?"lying low":"at your door");
-          h+='<table class="tbl"><tr><td class="g">Man '+(tq+1)+'</td><td>'+what+'</td></tr></table>';
-          if(tt.order!=="posted")
-            h+='<button class="btn sm" onclick="thugOrder('+tq+',\'posted\');layout()">Post him where you stand</button>';
-          if(tt.order!=="idle")
-            h+='<button class="btn sm" onclick="thugOrder('+tq+',\'idle\');layout()">Call him in</button>';
+          h+='<table class="tbl"><tr><td class="g">'+
+             '<button class="btn sm" onclick="thugToggle('+tq+');layout()">'+
+             (tt.sel?"&#10003; ":"")+'Man '+(tq+1)+'</button></td><td>'+what+'</td></tr></table>';
+        }
+        h+='<button class="btn sm" onclick="thugSelectAll(1);layout()">Pick all</button>'+
+           '<button class="btn sm" onclick="thugSelectAll(0);layout()">Pick none</button>';
+        h+='<p class="fine" style="margin-top:6px">'+sel.length+' man'+(sel.length>1?"":"")+' will take the order.</p>';
+        h+='<button class="btn sm" onclick="thugOrderSel(\'asking\');layout()">Ask around here</button>'+
+           '<button class="btn sm" onclick="thugOrderSel(\'idle\');layout()">Call them in</button>';
+        /* anyone your men have already put down, and who can be finished */
+        for(var fq=0;fq<(G.rivals||[]).length;fq++){
+          var fr=G.rivals[fq];
+          if(!fr||!(fr.down>G.day*DAYH+G.t))continue;
+          h+='<button class="btn sm" style="color:var(--blood)" onclick="thugFinish('+fq+')">'+
+             'Finish House '+esc(fr.h)+' &middot; he is down</button>';
         }
       }
+    }
+    /* ── the den ──────────────────────────────────────────────────── */
+    if(G.trade==="smuggler"){
+      h+='<h3 style="margin-top:14px">The den</h3>';
+      if(!denLvl()){
+        h+='<p class="fine">Thieves want somewhere to come back to. '+
+           DEN_LEVELS[0].n+' costs '+fmt(DEN_LEVELS[0].cost)+'.</p>'+
+           '<button class="btn sm" onclick="denBuild()">Open a '+DEN_LEVELS[0].n+'</button>';
+      } else {
+        h+='<table class="tbl"><tr><td class="g">The house</td><td>'+esc(denName())+'</td></tr>'+
+           '<tr><td class="g">Thieves</td><td>'+(G.thieves||0)+' of '+denCap()+'</td></tr>'+
+           '<tr><td class="g">Kidnap</td><td>'+(denCanKidnap()?"within reach":"wants a larger house")+'</td></tr></table>';
+        if(denLvl()<DEN_LEVELS.length)
+          h+='<button class="btn sm" onclick="denBuild()">Take it up to '+
+             esc(DEN_LEVELS[denLvl()].n)+' &middot; '+fmt(DEN_LEVELS[denLvl()].cost)+'</button>';
+        if((G.thieves||0)<denCap())
+          h+='<button class="btn sm" onclick="hireThief()">Take a thief on &middot; '+fmt(thiefHireCost())+'</button>';
+        if(G.thieves)h+='<button class="btn sm" onclick="dismissThief()">Turn one out</button>';
+        if(G.thieves){
+          syncThiefBodies();
+          var tsel=thiefSelected();
+          h+='<p class="fine" style="margin-top:8px">Your thieves &mdash; tick to pick, then order:</p>';
+          for(var vq=0;vq<(G.thiefNpcs||[]).length;vq++){
+            var vt=G.thiefNpcs[vq];
+            var vw=vt.order==="lifting"?("on pockets"+(vt.took?" &middot; "+fmt(vt.took):"")):
+                   vt.order==="burgling"?"at a door":
+                   vt.order==="snatching"?"out after a man":
+                   vt.order==="hiding"?"gone to ground":
+                   (vt.cool>0?"lying low":"in the den");
+            h+='<table class="tbl"><tr><td class="g">'+
+               '<button class="btn sm" onclick="thiefToggle('+vq+');layout()">'+
+               (vt.sel?"&#10003; ":"")+'Thief '+(vq+1)+'</button></td><td>'+vw+'</td></tr></table>';
+          }
+          h+='<button class="btn sm" onclick="thiefSelectAll(1);layout()">Pick all</button>'+
+             '<button class="btn sm" onclick="thiefSelectAll(0);layout()">Pick none</button>';
+          h+='<p class="fine" style="margin-top:6px">'+tsel.length+' will take the order.</p>';
+          h+='<button class="btn sm" onclick="thiefOrderSel(\'lifting\');layout()">Work pockets here</button>'+
+             '<button class="btn sm" onclick="thiefOrderSel(\'idle\');layout()">Back to the den</button>';
+          /* doors worth trying: the houses the rivals hold */
+          for(var bq=0;bq<B.length;bq++){
+            var bb=B[bq];
+            if(bb.ownerRival==null)continue;
+            h+='<button class="btn sm" onclick="thiefOrderSel(\'burgling\',\''+bb.id+'\');layout()">'+
+               'Burgle '+esc(bb.n||"a house")+'</button>';
+          }
+          if(denCanKidnap()){
+            for(var kq=0;kq<(G.rivals||[]).length;kq++){
+              var kr=G.rivals[kq]; if(!kr)continue;
+              h+='<button class="btn sm" onclick="thiefOrderSel(\'snatching\','+kq+');layout()">'+
+                 'Snatch House '+esc(kr.h)+(kr.down>G.day*DAYH+G.t?" &middot; he is down":"")+'</button>';
+            }
+          }
+        }
+        if((G.prisoners||[]).length){
+          h+='<p class="fine" style="margin-top:8px">In the cellar. Their houses do nothing while they are down there, and nobody knows who has them.</p>';
+          for(var pq=0;pq<G.prisoners.length;pq++){
+            var pp=G.prisoners[pq];
+            var hh=(pp.health==null?100:pp.health);
+            var cond=hh>75?"holding up":hh>45?"poorly":hh>20?"failing":"nearly gone";
+            h+='<table class="tbl"><tr><td class="g">House '+esc(pp.h)+'</td><td>'+
+               cond+' &middot; '+hh+'</td></tr>'+
+               '<tr><td class="g">Worth</td><td>'+fmt(pp.ransom)+' if you ask</td></tr></table>'+
+               '<button class="btn sm" onclick="prisonerRansom('+pq+')">Send word &middot; ask for it</button>'+
+               '<button class="btn sm" onclick="prisonerRelease('+pq+')">Turn him loose</button>';
+          }
+        }
+      }
+    }
+    if(thugCap()>=1){
       h+='<p class="fine" style="margin-top:8px">What you pay is what they are worth to you when a bailiff leans on them.</p>';
       h+='<button class="btn sm" onclick="setThugWage(1)">'+THUG_BASE+'/day &middot; the going rate</button>'+
          '<button class="btn sm" onclick="setThugWage(1.7)">'+Math.round(THUG_BASE*1.7)+'/day &middot; well kept</button>'+
@@ -17206,6 +17663,9 @@ $("resume").onclick=function(){
     if(!G.rivalCd)G.rivalCd={};
     if(G.thugs===undefined){G.thugs=0;G.thugWage=THUG_BASE;G.thugLoyal=0;G.thugJob=null;}
     if(!G.thugNpcs)G.thugNpcs=[];
+    if(G.thieves===undefined){G.den=G.den||null;G.thieves=0;}
+    if(!G.thiefNpcs)G.thiefNpcs=[];
+    if(!G.prisoners)G.prisoners=[];
     if(!G.sup)G.sup={0:{},1:{}};
     if(!G.deeds)G.deeds={};
     if(!G.support)G.support={};
