@@ -216,7 +216,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v6.077</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v6.078</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -278,6 +278,10 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
       </div>
       <div class="clock" id="clock">—</div>
       <div class="roster" id="roster"></div>
+      <button id="stepOutBtn" onclick="walkOutOfCourt()" style="display:none;position:absolute;
+        left:50%;bottom:14px;transform:translateX(-50%);z-index:6;padding:8px 16px;
+        background:rgba(20,16,10,.88);color:#F2E6C8;border:1px solid #B8923E;border-radius:10px;
+        font-family:'Alegreya Sans',system-ui,sans-serif;font-size:calc(14px * var(--s));">Step outside</button>
     </div>
     <div id="fightbar" style="display:none;padding:10px 12px;background:#241715;
       border-top:2px solid #7c2f26;border-bottom:2px solid #7c2f26"></div>
@@ -393,7 +397,10 @@ var DAYH=24;              /* in-game hours per day */
    which reads as "days go by too fast". Slowed by half: a day is now
    about seven real minutes at 1x instead of three and a half, so there is
    time to actually do something in the daylight you have. */
-var HOURSEC=13.5;         /* real seconds per in-game hour at 1x */
+/* was 13.5 -- a full day passed in five and a half real minutes even at
+   1x, which read as everything happening at once. Slower across every
+   speed, not just retuned at one of them. */
+var HOURSEC=24;           /* real seconds per in-game hour at 1x */
 var DAYS_PER_SEASON=6, DAYS_PER_YEAR=24;
 
 var GOODS={
@@ -1338,7 +1345,7 @@ function placeBuilt(rec){
   var vx=sx-rec.x, vz=sz-rec.z, dxo=0, dzo=0;
   /* the step is out past the wall's own collision margin, as the town's
      doors are — at 0.9 it was inside it and nobody could reach the door */
-  if(Math.abs(vx)>Math.abs(vz)){dxo=(vx>0?1:-1)*(d.w/2+1.6);} else {dzo=(vz>0?1:-1)*(d.d/2+1.6);}
+  if(Math.abs(vx)>Math.abs(vz)){dxo=(vx>0?1:-1)*(d.w/2+2.4);} else {dzo=(vz>0?1:-1)*(d.d/2+2.4);}
   var b={id:rec.id, n:d.n, x:rec.x, z:rec.z, dx:rec.x+dxo, dz:rec.z+dzo, kind:BUILT_AS[rec.bk]||"town",
          built:rec.bk, rent:d.rent||0, w:d.w, d:d.d, h:d.h, wall:d.wall, roof:d.roof, town:0, outside:false};
   if(rec.bk==="shop2"){b.tradeId=rec.trade||G.trade;}
@@ -2472,8 +2479,11 @@ function buildTown(){
     var x=sx+ox, z=sz+oz;
     var o={id:id,n:n,x:x,z:z,w:w,d:d,h:h,wall:wall,roof:roof,kind:kind};
     var dl=Math.hypot(ox,oz)||1;
-    o.dx=x-(ox/dl)*(Math.max(w,d)/2+1.7);
-    o.dz=z-(oz/dl)*(Math.max(w,d)/2+1.7);
+    /* 1.7 put some doors within a metre of the building's own padded
+       collision zone; a running approach could cross that gap in one
+       frame. 2.4 leaves real room to actually arrive. */
+    o.dx=x-(ox/dl)*(Math.max(w,d)/2+2.4);
+    o.dz=z-(oz/dl)*(Math.max(w,d)/2+2.4);
     o._vx=sx;o._vz=sz;
     if(extra)for(var k in extra)o[k]=extra[k];
     B.push(o); return o;
@@ -3555,7 +3565,15 @@ function fleeFrom(m,fx,fz){
 function stepEnterOn(){
   var A=G.enterOn; if(!A||FIGHT)return;
   if(G.day*DAYH+G.t>A.until){G.enterOn=null;return;}
-  if(Math.hypot(G.px-A.x,G.pz-A.z)>0.55){
+  var dd=Math.hypot(G.px-A.x,G.pz-A.z);
+  /* progress is measured, not assumed: if the same order has not brought
+     you any closer for a while, something is in the way that walking
+     cannot solve on its own, and it should let go rather than hold a
+     run order against a wall forever */
+  if(A.lastD===undefined||dd<A.lastD-0.05){A.lastD=dd;A.stuckT=0;}
+  else A.stuckT=(A.stuckT||0)+1;
+  if(A.stuckT>90){G.enterOn=null;G.run=false;note("Could not get to the door.");return;}
+  if(dd>0.55){
     if(!G.path||!G.path.length){goTo(A.x,A.z);G.run=true;}
     return;
   }
@@ -4006,7 +4024,38 @@ function slideTo(o,nx,nz){
     if(!blockedAt(o.x+dx,o.z)){o.x+=dx;return true;}
     if(!blockedAt(o.x-dx,o.z)){o.x-=dx;return true;}
   }
+  /* Every one of those failed, which used to mean the caller left o.x/o.z
+     untouched and came back to try the exact same blocked move next frame
+     -- forever, since nothing about the situation had changed. The walk
+     animation kept playing while the body never moved: a person standing
+     in a corner looking like they are walking into it. A small nudge away
+     from whatever is nearest changes the geometry enough that one of the
+     four attempts above succeeds on a later frame. */
+  var nb=nearestBlocker(o.x,o.z);
+  if(nb){
+    var ax=o.x-nb.x, az=o.z-nb.z, al=Math.hypot(ax,az)||1;
+    var tx2=o.x+(ax/al)*0.30, tz2=o.z+(az/al)*0.30;
+    if(!blockedAt(tx2,tz2)){o.x=tx2;o.z=tz2;}
+  }
   return false;
+}
+/* whichever building or prop the point in question is actually pressed
+   against, so the unstick nudge has a direction to push away from */
+function nearestBlocker(x,z){
+  var best=null,bd=1e9,i;
+  for(i=0;i<B.length;i++){
+    var b=B[i]; if(!b.w||!b.d)continue;
+    var dx=Math.max(Math.abs(x-b.x)-b.w/2,0), dz=Math.max(Math.abs(z-b.z)-b.d/2,0);
+    var d=Math.hypot(dx,dz);
+    if(d<bd){bd=d;best=b;}
+  }
+  for(i=0;i<(PROPS||[]).length;i++){
+    var p=PROPS[i];
+    var dx2=Math.max(Math.abs(x-p.x)-(p.w||1)/2,0), dz2=Math.max(Math.abs(z-p.z)-(p.d||1)/2,0);
+    var d2=Math.hypot(dx2,dz2);
+    if(d2<bd){bd=d2;best=p;}
+  }
+  return best;
 }
 /* in a hurry: fleeing, running to a fire, late for the bell, sent home
    for the night, or told to */
@@ -17149,6 +17198,12 @@ function layout(){
   var hh=Math.floor(G.t),mm=Math.floor((G.t-hh)*60);
   $("clock").textContent=SEASONS[Math.floor(G.day/DAYS_PER_SEASON)%4]+", day "+(G.day+1)+
     "  "+(hh<10?"0":"")+hh+":"+(mm<10?"0":"")+mm;
+  /* an always-visible way out, next to the double-tap: the panel button
+     scrolls out of sight once there is much to read in a room, and the
+     double-tap has to be aimed at a specific spot most people would not
+     guess is there */
+  var soB=$("stepOutBtn");
+  if(soB)soB.style.display=(G&&!G.over&&inRoom())?"":"none";
   drawHere(); drawCheats();
 }
 
@@ -17158,7 +17213,11 @@ function loop(ts){
   if(!lastT)lastT=ts;
   var dt=Math.min(0.1,(ts-lastT)/1000);lastT=ts;
   if(G){WORLDT+=dt;updateSmoke(dt);}
-  if(G&&!G.over&&speed>0)step(dt*speed);
+  /* speed 0 used to skip step() outright: a hard freeze, nothing moving,
+     nothing to look at. It now crawls forward at a small fraction instead
+     of stopping dead, so the world is still visibly alive while you
+     decide what to do next. */
+  if(G&&!G.over)step(dt*(speed>0?speed:0.05));
   draw();
   fTimes[fIdx++%30]=performance.now()-ts;
   if(fIdx===60&&!LOWQ){
@@ -17308,6 +17367,16 @@ function bindCanvas(){
     var rg=roomGroundAt(TX,TY);
     if(rg){
       var RR=ROOMS[G.scene];
+      /* the door is the near wall you walked in through -- x near 0, z
+         near +D/2. A second tap there in the same moment (the same
+         TAPRUN signal a double-tap outdoors sets) steps you back out,
+         the same shape as double-tapping a building from the street. */
+      if(TAPRUN&&Math.abs(rg[0])<2.0&&rg[1]>RR.d/2-3.0){
+        /* a court has its own price for walking out mid-hearing -- this
+           goes through the same confirmation the button does rather than
+           a raw leaveRoom() that would skip it */
+        walkOutOfCourt(); return;
+      }
       var tx2=clamp(rg[0],-RR.w/2+0.9,RR.w/2-0.9);
       var tz2=clamp(rg[1],-RR.d/2+0.9,RR.d/2-0.9);
       if(!roomBlocked(tx2,tz2)){G.tx=tx2;G.tz=tz2;}
@@ -17334,7 +17403,13 @@ function bindCanvas(){
          building the tap actually lands on wins over a walker who merely
          happens to be near it; a walker only takes the tap when it is
          close to HIM and not on a building. */
-      if(bestN&&bnd>11){
+      if(bestN){
+        /* the old gate only even LOOKED for a building when the walker was
+           more than 11px away, so anyone standing close to the tap always
+           won -- and townsfolk walk right along a wall face, which is
+           exactly where a tap meant for the building kept landing on them
+           instead, and one further tap there could offer to kill them.
+           A fair nearest-wins comparison replaces that blanket exception. */
         var onB=null,onBd=1e9;
         for(var bi2=0;bi2<B.length;bi2++){
           var bb=B[bi2],bs=projectPoint([bb.x,(bb.h||2)*0.6,bb.z]);
@@ -17344,7 +17419,7 @@ function bindCanvas(){
           var bhit2=be2?Math.max(14,Math.min(46,Math.hypot(be2[0]-bs[0],be2[1]-bs[1])*0.9)):22;
           if(bdd<onBd&&bdd<bhit2){onBd=bdd;onB=bb;}
         }
-        if(onB)bestN=null;              /* the building was what you meant */
+        if(onB&&onBd<bnd)bestN=null;    /* the building was actually closer to the tap */
       }
       if(bestN){
         var wd=Math.hypot(G.px-bestN.x,G.pz-bestN.z);
