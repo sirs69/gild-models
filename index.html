@@ -216,7 +216,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v6.075</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v6.077</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -586,6 +586,79 @@ function denAt(){
   var b=null;
   for(var i=0;i<B.length;i++)if(B[i].id===(G.shop&&G.shop.bId||"shop")){b=B[i];break;}
   return b?{x:b.dx-2.2,z:b.dz-2.2}:{x:G.px,z:G.pz};
+}
+function denPanel(){
+  /* Its own panel, and NOT behind a title. The den was nested inside the
+     back room, which is gated on thugCap() -- rank minus one -- so a
+     smuggler with no title could never see it and had no way to open one.
+     Thieves are not livery; nobody needs a rank to keep a cellar. */
+  var h="";
+  if(G.trade!=="smuggler")return h;
+      h+='<h3 style="margin-top:14px">The den</h3>';
+      if(!denLvl()){
+        h+='<p class="fine">Thieves want somewhere to come back to. '+
+           DEN_LEVELS[0].n+' costs '+fmt(DEN_LEVELS[0].cost)+'.</p>'+
+           '<button class="btn sm" onclick="denBuild()">Open a '+DEN_LEVELS[0].n+'</button>';
+      } else {
+        h+='<table class="tbl"><tr><td class="g">The house</td><td>'+esc(denName())+'</td></tr>'+
+           '<tr><td class="g">Thieves</td><td>'+(G.thieves||0)+' of '+denCap()+'</td></tr>'+
+           '<tr><td class="g">Kidnap</td><td>'+(denCanKidnap()?"within reach":"wants a larger house")+'</td></tr></table>';
+        if(denLvl()<DEN_LEVELS.length)
+          h+='<button class="btn sm" onclick="denBuild()">Take it up to '+
+             esc(DEN_LEVELS[denLvl()].n)+' &middot; '+fmt(DEN_LEVELS[denLvl()].cost)+'</button>';
+        if((G.thieves||0)<denCap())
+          h+='<button class="btn sm" onclick="hireThief()">Take a thief on &middot; '+fmt(thiefHireCost())+'</button>';
+        if(G.thieves)h+='<button class="btn sm" onclick="dismissThief()">Turn one out</button>';
+        if(G.thieves){
+          syncThiefBodies();
+          var tsel=thiefSelected();
+          h+='<p class="fine" style="margin-top:8px">Your thieves &mdash; tick to pick, then order:</p>';
+          for(var vq=0;vq<(G.thiefNpcs||[]).length;vq++){
+            var vt=G.thiefNpcs[vq];
+            var vw=vt.order==="lifting"?("on pockets"+(vt.took?" &middot; "+fmt(vt.took):"")):
+                   vt.order==="burgling"?"at a door":
+                   vt.order==="snatching"?"out after a man":
+                   vt.order==="hiding"?"gone to ground":
+                   (vt.cool>0?"lying low":"in the den");
+            h+='<table class="tbl"><tr><td class="g">'+
+               '<button class="btn sm" onclick="thiefToggle('+vq+');layout()">'+
+               (vt.sel?"&#10003; ":"")+'Thief '+(vq+1)+'</button></td><td>'+vw+'</td></tr></table>';
+          }
+          h+='<button class="btn sm" onclick="thiefSelectAll(1);layout()">Pick all</button>'+
+             '<button class="btn sm" onclick="thiefSelectAll(0);layout()">Pick none</button>';
+          h+='<p class="fine" style="margin-top:6px">'+tsel.length+' will take the order.</p>';
+          h+='<button class="btn sm" onclick="thiefOrderSel(\'lifting\');layout()">Work pockets here</button>'+
+             '<button class="btn sm" onclick="thiefOrderSel(\'idle\');layout()">Back to the den</button>';
+          /* doors worth trying: the houses the rivals hold */
+          for(var bq=0;bq<B.length;bq++){
+            var bb=B[bq];
+            if(bb.ownerRival==null)continue;
+            h+='<button class="btn sm" onclick="thiefOrderSel(\'burgling\',\''+bb.id+'\');layout()">'+
+               'Burgle '+esc(bb.n||"a house")+'</button>';
+          }
+          if(denCanKidnap()){
+            for(var kq=0;kq<(G.rivals||[]).length;kq++){
+              var kr=G.rivals[kq]; if(!kr)continue;
+              h+='<button class="btn sm" onclick="thiefOrderSel(\'snatching\','+kq+');layout()">'+
+                 'Snatch House '+esc(kr.h)+(kr.down>G.day*DAYH+G.t?" &middot; he is down":"")+'</button>';
+            }
+          }
+        }
+        if((G.prisoners||[]).length){
+          h+='<p class="fine" style="margin-top:8px">In the cellar. Their houses do nothing while they are down there, and nobody knows who has them.</p>';
+          for(var pq=0;pq<G.prisoners.length;pq++){
+            var pp=G.prisoners[pq];
+            var hh=(pp.health==null?100:pp.health);
+            var cond=hh>75?"holding up":hh>45?"poorly":hh>20?"failing":"nearly gone";
+            h+='<table class="tbl"><tr><td class="g">House '+esc(pp.h)+'</td><td>'+
+               cond+' &middot; '+hh+'</td></tr>'+
+               '<tr><td class="g">Worth</td><td>'+fmt(pp.ransom)+' if you ask</td></tr></table>'+
+               '<button class="btn sm" onclick="prisonerRansom('+pq+')">Send word &middot; ask for it</button>'+
+               '<button class="btn sm" onclick="prisonerRelease('+pq+')">Turn him loose</button>';
+          }
+        }
+      }
+  return h;
 }
 function denBuild(){
   if(G.trade!=="smuggler")
@@ -3474,6 +3547,22 @@ function fleeFrom(m,fx,fz){
   m.tx=m.x+m.hx*46; m.tz=m.z+m.hz*46;
   m.leg=null; m.path=null; m.lastD=undefined;
   releaseIdle&&m.idle&&releaseIdle(m);
+}
+/* A double-tap on a building teleported you to the door instantly, which
+   looked like nothing happened until the room around you changed. It now
+   runs there properly and goes in when it arrives, the same shape as
+   chasing a man down after a tap. */
+function stepEnterOn(){
+  var A=G.enterOn; if(!A||FIGHT)return;
+  if(G.day*DAYH+G.t>A.until){G.enterOn=null;return;}
+  if(Math.hypot(G.px-A.x,G.pz-A.z)>0.55){
+    if(!G.path||!G.path.length){goTo(A.x,A.z);G.run=true;}
+    return;
+  }
+  G.enterOn=null;
+  G.px=A.x;G.pz=A.z;G.path=[];G.tx=A.x;G.tz=A.z;
+  here=A.b;
+  enterRoom(A.room);
 }
 /* you said go for that man; when you reach him, you go for him */
 function stepApproach(){
@@ -12952,6 +13041,7 @@ function step(dt){
   if(MEET&&!MEET.done)meetingStep(dt);
   if(FIGHT&&!FIGHT.over)fightAuto(dt);
   stepApproach();
+  stepEnterOn();
   stepFleeing(dt);
 
   if(FIGHT){
@@ -16628,6 +16718,8 @@ function drawHere(){
       h+='<button class="btn sm" onclick="buyCart('+ci2+')">'+esc(CC.n)+' &middot; +'+CC.cap+
          ' carried &middot; '+fmt(CC.cost-CARTS[G.cart||0].cost)+'</button>';
     }
+    /* the den first: it answers to no rank, unlike the back room */
+    h+=denPanel();
     /* ── the back room: men on the roll ────────────────────────────── */
     h+='<h3 style="margin-top:14px">The back room</h3>';
     if(thugCap()<1){
@@ -16671,73 +16763,6 @@ function drawHere(){
           if(!fr||!(fr.down>G.day*DAYH+G.t))continue;
           h+='<button class="btn sm" style="color:var(--blood)" onclick="thugFinish('+fq+')">'+
              'Finish House '+esc(fr.h)+' &middot; he is down</button>';
-        }
-      }
-    }
-    /* ── the den ──────────────────────────────────────────────────── */
-    if(G.trade==="smuggler"){
-      h+='<h3 style="margin-top:14px">The den</h3>';
-      if(!denLvl()){
-        h+='<p class="fine">Thieves want somewhere to come back to. '+
-           DEN_LEVELS[0].n+' costs '+fmt(DEN_LEVELS[0].cost)+'.</p>'+
-           '<button class="btn sm" onclick="denBuild()">Open a '+DEN_LEVELS[0].n+'</button>';
-      } else {
-        h+='<table class="tbl"><tr><td class="g">The house</td><td>'+esc(denName())+'</td></tr>'+
-           '<tr><td class="g">Thieves</td><td>'+(G.thieves||0)+' of '+denCap()+'</td></tr>'+
-           '<tr><td class="g">Kidnap</td><td>'+(denCanKidnap()?"within reach":"wants a larger house")+'</td></tr></table>';
-        if(denLvl()<DEN_LEVELS.length)
-          h+='<button class="btn sm" onclick="denBuild()">Take it up to '+
-             esc(DEN_LEVELS[denLvl()].n)+' &middot; '+fmt(DEN_LEVELS[denLvl()].cost)+'</button>';
-        if((G.thieves||0)<denCap())
-          h+='<button class="btn sm" onclick="hireThief()">Take a thief on &middot; '+fmt(thiefHireCost())+'</button>';
-        if(G.thieves)h+='<button class="btn sm" onclick="dismissThief()">Turn one out</button>';
-        if(G.thieves){
-          syncThiefBodies();
-          var tsel=thiefSelected();
-          h+='<p class="fine" style="margin-top:8px">Your thieves &mdash; tick to pick, then order:</p>';
-          for(var vq=0;vq<(G.thiefNpcs||[]).length;vq++){
-            var vt=G.thiefNpcs[vq];
-            var vw=vt.order==="lifting"?("on pockets"+(vt.took?" &middot; "+fmt(vt.took):"")):
-                   vt.order==="burgling"?"at a door":
-                   vt.order==="snatching"?"out after a man":
-                   vt.order==="hiding"?"gone to ground":
-                   (vt.cool>0?"lying low":"in the den");
-            h+='<table class="tbl"><tr><td class="g">'+
-               '<button class="btn sm" onclick="thiefToggle('+vq+');layout()">'+
-               (vt.sel?"&#10003; ":"")+'Thief '+(vq+1)+'</button></td><td>'+vw+'</td></tr></table>';
-          }
-          h+='<button class="btn sm" onclick="thiefSelectAll(1);layout()">Pick all</button>'+
-             '<button class="btn sm" onclick="thiefSelectAll(0);layout()">Pick none</button>';
-          h+='<p class="fine" style="margin-top:6px">'+tsel.length+' will take the order.</p>';
-          h+='<button class="btn sm" onclick="thiefOrderSel(\'lifting\');layout()">Work pockets here</button>'+
-             '<button class="btn sm" onclick="thiefOrderSel(\'idle\');layout()">Back to the den</button>';
-          /* doors worth trying: the houses the rivals hold */
-          for(var bq=0;bq<B.length;bq++){
-            var bb=B[bq];
-            if(bb.ownerRival==null)continue;
-            h+='<button class="btn sm" onclick="thiefOrderSel(\'burgling\',\''+bb.id+'\');layout()">'+
-               'Burgle '+esc(bb.n||"a house")+'</button>';
-          }
-          if(denCanKidnap()){
-            for(var kq=0;kq<(G.rivals||[]).length;kq++){
-              var kr=G.rivals[kq]; if(!kr)continue;
-              h+='<button class="btn sm" onclick="thiefOrderSel(\'snatching\','+kq+');layout()">'+
-                 'Snatch House '+esc(kr.h)+(kr.down>G.day*DAYH+G.t?" &middot; he is down":"")+'</button>';
-            }
-          }
-        }
-        if((G.prisoners||[]).length){
-          h+='<p class="fine" style="margin-top:8px">In the cellar. Their houses do nothing while they are down there, and nobody knows who has them.</p>';
-          for(var pq=0;pq<G.prisoners.length;pq++){
-            var pp=G.prisoners[pq];
-            var hh=(pp.health==null?100:pp.health);
-            var cond=hh>75?"holding up":hh>45?"poorly":hh>20?"failing":"nearly gone";
-            h+='<table class="tbl"><tr><td class="g">House '+esc(pp.h)+'</td><td>'+
-               cond+' &middot; '+hh+'</td></tr>'+
-               '<tr><td class="g">Worth</td><td>'+fmt(pp.ransom)+' if you ask</td></tr></table>'+
-               '<button class="btn sm" onclick="prisonerRansom('+pq+')">Send word &middot; ask for it</button>'+
-               '<button class="btn sm" onclick="prisonerRelease('+pq+')">Turn him loose</button>';
-          }
         }
       }
     }
@@ -17382,8 +17407,12 @@ function bindCanvas(){
                      infirmary:"infirmary",hall:"council"}[best.kind];
         if(roomFor)G.sceneId=best.id;   /* two spital houses, two casts */
         if(same&&roomFor&&(best.kind!=="court"||true)){
-          G.px=best.dx;G.pz=best.dz;G.path=[];here=best;
-          enterRoom(roomFor);
+          /* a second tap used to teleport you to the door instantly, which
+             read as nothing happening until the room changed under you.
+             It now runs there and goes in when it arrives. */
+          G.enterOn={x:best.dx,z:best.dz,b:best,room:roomFor,
+                     until:G.day*DAYH+G.t+0.5};
+          goTo(best.dx,best.dz); G.run=true;
         } else if(same&&best.kind==="town"){
           /* an ordinary house has no door you can open, but it does have a
              deed — a second tap asks after it */
