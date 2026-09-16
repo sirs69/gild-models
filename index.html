@@ -216,7 +216,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v6.065</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v6.071</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -412,11 +412,11 @@ var GOODS={
 var TRADES={
   baker:{n:"Baker",shop:"The Bakehouse",inG:"grain",outG:"bread",rate:.65,wall:[214,196,158],roof:[142,74,44],
     blurb:"Grain in, bread out. Everybody eats, and in a hard winter they pay whatever you ask."},
-  smith:{n:"Smith",shop:"The Smithy",inG:"iron",outG:"tools",rate:.245,wall:[198,186,160],roof:[92,88,98],
+  smith:{n:"Smith",shop:"The Smithy",inG:"iron",outG:"tools",rate:.325,wall:[198,186,160],roof:[92,88,98],
     blurb:"Two bars of iron into one tool worth four of them. Slow work, heavy purses."},
-  apothecary:{n:"Apothecary",shop:"The Apothecary",inG:"herbs",outG:"remedy",rate:.41,wall:[196,204,182],roof:[124,106,62],
+  apothecary:{n:"Apothecary",shop:"The Apothecary",inG:"herbs",outG:"remedy",rate:.479,wall:[196,204,182],roof:[124,106,62],
     blurb:"Herbs and patience. The council listens to a man who has kept them alive."},
-  smuggler:{n:"Smuggler",shop:"The Warehouse",inG:"hides",outG:"contraband",rate:.272,wall:[176,164,140],roof:[70,58,50],
+  smuggler:{n:"Smuggler",shop:"The Warehouse",inG:"hides",outG:"contraband",rate:.406,wall:[176,164,140],roof:[70,58,50],
     blurb:"Hides in the cart, other things beneath them. Fast coin, and the church remembers."},
   /* A physician sells no goods. He buys herbs like anyone and turns them
      into treatment, but the treatment goes into a person rather than onto a
@@ -518,6 +518,7 @@ function hireThug(){
       "Take him on",function(){
         G.coin-=c;G.thugs++;
         if(!G.thugLoyal)G.thugLoyal=thugLoyaltyTarget();
+        syncThugBodies();
         note("Took on a retainer.");layout();
       });
 }
@@ -539,18 +540,161 @@ function orderHit(ri,goYourself){
     fightStart(man,{
       label:man.name,
       hp:rnd(34,52)+r.t*4,
-      skill:Math.max(0,8+r.t*3-backing*4),   /* your men take some of it off him */
+      /* his own hired men, if he has bought any, make him harder to reach
+         in his own hall -- the same way yours make it easier for you */
+      skill:Math.max(0,8+r.t*3+(r.thugs||0)*3-backing*4),
       onWin:function(){hitSucceeded(ri,true);},
       onLose:function(){hitKilledYou();},
       onFlee:function(){hitTargetFled(ri);}
     });
   } else {
     if(!G.thugs)return say("Nobody to send","You have no men on the roll.");
-    if(G.thugJob)return say("Already in hand","Your men are out on the last of it.");
-    G.thugJob={ri:ri,day:G.day+1};
-    note("Set your men on House "+r.h+".");
-    say("The word goes out","Your men know the face and the hours. It will be tonight or tomorrow.\n\nYou will not be there. Whether that keeps your name out of it depends entirely on what you have been paying them.");
+    syncThugBodies();
+    /* They go now, on foot, from wherever they are standing. The old code
+       set a flag and rolled for it the next morning with nobody present --
+       you never saw the men you paid for do the thing you paid them for. */
+    var sent=0;
+    for(var i=0;i<(G.thugNpcs||[]).length;i++){
+      var t=G.thugNpcs[i];
+      if(t.inFight||t.cool>0)continue;
+      thugOrder(i,"sent",ri);
+      sent++;
+    }
+    if(!sent)return say("Not to hand","Your men are still lying low from the last of it.");
+    note("Set "+sent+" man"+(sent>1?"":"")+" on House "+r.h+".");
+    say("They go now",(sent>1?"Your men leave the yard":"Your man leaves the yard")+
+      " and go looking for him. Follow if you want to see it done.\n\n"+
+      "Whether it comes back to your name depends on what you have been paying them.");
   }
+}
+/* ── your men, as men ─────────────────────────────────────────────────
+   Guild 2 gets this right and the old code here got it wrong: a hired man
+   is not a number on a roster that resolves a roll tomorrow, he is a body
+   standing in your yard that you point at something and watch. Each thug
+   on the roll has an entity here. He takes an order, walks there, does
+   the thing where you can see it, and runs home if it goes badly.
+     posted  -- stands a beat and lifts purses off whoever passes
+     sent    -- walks at the head of a named house and fights him, now
+     idle    -- waits at your door */
+function thugHome(){
+  var b=null;
+  for(var i=0;i<B.length;i++)if(B[i].id===(G.shop&&G.shop.bId||"shop")){b=B[i];break;}
+  if(!b)for(i=0;i<B.length;i++)if(B[i].id===G.homeId){b=B[i];break;}
+  return b?{x:b.dx,z:b.dz}:{x:G.px,z:G.pz};
+}
+function syncThugBodies(){
+  if(!G.thugNpcs)G.thugNpcs=[];
+  var want=G.thugs||0;
+  while(G.thugNpcs.length>want)G.thugNpcs.pop();
+  while(G.thugNpcs.length<want){
+    var h=thugHome();
+    G.thugNpcs.push({x:h.x+(Math.random()-.5)*2,z:h.z+(Math.random()-.5)*2,
+      sp:1.15,c:[74,62,54],skin:rnd(0,SKINCOLORS.length-1),
+      walkT:0,gaitAmp:0,hx:0,hz:1,gender:0,
+      order:"idle", tx:null, tz:null, ri:null, cool:0, lifted:0});
+  }
+}
+function thugOrder(idx,order,ri){
+  var t=(G.thugNpcs||[])[idx]; if(!t)return;
+  t.order=order; t.ri=(ri==null?null:ri); t.cool=0;
+  if(order==="posted"){ t.tx=G.px; t.tz=G.pz; }
+  else if(order==="idle"){ var h=thugHome(); t.tx=h.x; t.tz=h.z; }
+}
+function thugSendHome(t,why){
+  var h=thugHome();
+  t.order="idle"; t.tx=h.x; t.tz=h.z; t.ri=null; t.cool=140;
+  if(why)note(why);
+}
+/* a posted man lifts from whoever comes close enough, on a cooldown, and
+   is caught by the odds the street gives him rather than by a die roll
+   made somewhere else */
+function thugLift(t,dt){
+  t.cool=Math.max(0,(t.cool||0)-dt);
+  if(t.cool>0)return;
+  var lists=[G.npcs||[],G.road||[]];
+  for(var L=0;L<lists.length;L++){
+    for(var i=0;i<lists[L].length;i++){
+      var m=lists[L][i];
+      if(!m||m.inside||m.inFight)continue;
+      if(Math.hypot(m.x-t.x,m.z-t.z)>1.8)continue;
+      var purse=(m.purse!=null)?m.purse:rnd(8,34);
+      var take=Math.max(1,Math.min(purse,Math.round(4+purse*0.22)));
+      if(m.purse!=null)m.purse=Math.max(0,m.purse-take);
+      G.coin+=take; t.lifted=(t.lifted||0)+take;
+      t.cool=26+rnd(0,18);
+      /* being seen is the whole risk: the watch nearby, and daylight */
+      var seen=0.10+(watchSees(t.x,t.z)?0.42:0)+((G.t>7&&G.t<19)?0.10:0);
+      if(Math.random()<seen){
+        G.heat=clamp(G.heat+9,0,100);
+        raiseHueAndCry(t.x,t.z,1);
+        thugSendHome(t,"One of your men was seen at it and bolted.");
+      }
+      return;
+    }
+  }
+}
+function stepThugs(dt){
+  syncThugBodies();
+  var L=G.thugNpcs||[];
+  for(var i=0;i<L.length;i++){
+    var t=L[i];
+    if(t.inFight)continue;
+    if(t.order==="sent"){
+      var r=G.rivals[t.ri];
+      if(!r){ thugSendHome(t,null); continue; }
+      var man=headOf(t.ri);
+      if(!man){ thugSendHome(t,"Your men could not find him today."); continue; }
+      t.tx=man.x; t.tz=man.z;
+      var d=Math.hypot(man.x-t.x,man.z-t.z);
+      if(d<1.4){ thugStrike(t,i); continue; }
+    }
+    if(t.order==="posted")thugLift(t,dt);
+    if(t.tx==null)continue;
+    var dx=t.tx-t.x, dz=t.tz-t.z, dd=Math.hypot(dx,dz);
+    if(dd>0.6){
+      var amt=t.sp*dt;
+      slideTo(t,t.x+dx/dd*amt,t.z+dz/dd*amt);
+      t.hx=dx/dd;t.hz=dz/dd;t.walkT=(t.walkT||0)+amt;
+      t.gaitAmp=(t.gaitAmp||0)+(1-(t.gaitAmp||0))*Math.min(1,dt*8);
+    } else {
+      t.gaitAmp=(t.gaitAmp||0)*Math.max(0,1-dt*6);
+    }
+  }
+}
+/* the moment of it: your man against the head of the house, resolved on
+   the spot and in the open, not tomorrow and not offscreen */
+function thugStrike(t,idx){
+  var ri=t.ri, r=G.rivals[ri]; if(!r){thugSendHome(t,null);return;}
+  var man=headOf(ri); if(!man){thugSendHome(t,null);return;}
+  var mine=1+((G.thugNpcs||[]).filter(function(o){return o!==t&&o.order==="sent"&&o.ri===ri;}).length);
+  /* his own hired men stand in the way; yours, in numbers, do not care */
+  var odds=clamp(0.26+mine*0.14-r.t*0.06-(r.thugs||0)*0.05,0.08,0.86);
+  var won=Math.random()<odds;
+  if(won){
+    note("Your men put House "+r.h+"'s head down in the street.");
+    hitSucceeded(ri,false);
+  } else {
+    note("Your men were beaten off by House "+r.h+".");
+    r.grudge=(r.grudge||0)+2;
+    if(Math.random()<0.42&&G.thugs>0){
+      G.thugs--; syncThugBodies();
+      note("One of your men did not come back.");
+      return;
+    }
+  }
+  /* seen doing it, and whether he gives you up when they take him */
+  if(Math.random()<(won?0.55:0.70)){
+    if(Math.random()*100>(G.thugLoyal||0)){
+      note("Your man was taken up, and he gave your name.");
+      G.heat=clamp(G.heat+26,0,100);
+      if(!G.trial)summon("affray",rnd(2,4));
+    } else {
+      note("Your man was taken up. He said nothing, and they let him go.");
+      G.heat=clamp(G.heat+8,0,100);
+      G.thugLoyal=Math.max(0,(G.thugLoyal||0)-6);
+    }
+  }
+  thugSendHome(t,null);
 }
 /* resolved the following day, out of sight */
 function thugJobDay(){
@@ -561,7 +705,9 @@ function thugJobDay(){
   /* four men against a titled house should not be a formality: measured at
      the first numbers it came off 83% of the time, which made sending them
      strictly better than going. */
-  var odds=clamp(0.12+men*0.12-r.t*0.06,0.08,0.72);
+  /* his roll of thugs is bodyguards now, not just a title -- your men
+     going in quiet has to get past them first */
+  var odds=clamp(0.12+men*0.12-r.t*0.06-(r.thugs||0)*0.05,0.08,0.72);
   var won=Math.random()<odds;
   if(Math.random()<(won?0.16:0.42)&&G.thugs>0){
     G.thugs--;note("One of your men did not come back.");
@@ -1224,13 +1370,21 @@ function houseGrowDay(){
     if(!r||!r.trade)continue;
     /* a house refused its charter cannot grow while the refusal stands */
     if(G.motions&&G.motions.charters&&G.motions.charters[i]>G.day)continue;
-    if(Math.random()>0.06)continue;
+    /* At the old 6%-a-day chance and a 0.004 step, a house needed roughly
+       2000 days -- 85 years -- to walk from its starting ~13% up to the old
+       0.62 cap. It was never going to get there: not a rare event, a rate
+       that rounds to never. A house now reaches near-dominance of its own
+       trade within the first handful of years, the way an ambitious dynasty
+       actually would, instead of sitting at its starting share for a whole
+       game. */
+    if(Math.random()>0.35)continue;
     var g=TRADES[r.trade].outG;
     var held=G.houseShare[g]||0;
-    /* the anonymous trade never falls below a third — somebody outside the
-       walls always brings something up the road */
-    if(held>=0.62)continue;
-    var grow=0.004*(0.5+r.rep/100);
+    /* one house per trade, so "almost saturated" means one house can come
+       to hold most of it -- a sixth left for whatever the road still brings
+       in, not the old third */
+    if(held>=0.85)continue;
+    var grow=0.010*(0.5+r.rep/100);
     r.share+=grow;
     G.houseShare[g]=held+grow;
   }
@@ -1267,6 +1421,23 @@ function rivalPlots(ri){
   var n=0;
   for(var i=0;i<B.length;i++)if(B[i].ownerRival===ri)n++;
   return n;
+}
+/* A house buys muscle the way it buys a plot: coin down, and a cap tied
+   to standing, so a plain family cannot field the same roll a burgomaster
+   can. Unlike a plot this is never visible on the street -- you find out
+   it exists when one of them is standing in the road in front of you. */
+function houseThugDay(){
+  if(!G.rivals)return;
+  for(var i=0;i<G.rivals.length;i++){
+    var r=G.rivals[i];
+    if(!r||!r.trade)continue;
+    var cap=1+r.t;
+    if((r.thugs||0)>=cap)continue;
+    var cost=180+(r.thugs||0)*140;      /* same shape as the player's own hire */
+    if(r.coin<cost)continue;
+    if(Math.random()>0.05)continue;
+    r.coin-=cost; r.thugs=(r.thugs||0)+1;
+  }
 }
 function houseBuildDay(){
   if(!G.rivals||!G.houseShare)return;
@@ -1307,7 +1478,7 @@ function houseBuildDay(){
     pick2.kind="shop2"; pick2.ownerRival=i; pick2.tradeId=r.trade;
     var g2=TRADES[r.trade].outG;
     var gain=0.035;
-    if((G.houseShare[g2]||0)+gain<0.62){
+    if((G.houseShare[g2]||0)+gain<0.85){
       r.share=(r.share||0)+gain;
       G.houseShare[g2]=(G.houseShare[g2]||0)+gain;
     }
@@ -1318,6 +1489,7 @@ function houseBuildDay(){
 function marketDay(){
   houseGrowDay();
   houseBuildDay();
+  houseThugDay();
   if(!G.sup)G.sup={0:{},1:{}};
   if(!G.cover)G.cover={0:{},1:{}};
   for(var t=0;t<2;t++){
@@ -1518,7 +1690,7 @@ function newGame(name,trade,look){
        itself: producers carve up a fixed appetite instead of piling into a
        pool that only ever grows. */
     var rtrades=["baker","smith","apothecary","smuggler"];
-    rivals.push({h:h,coin:rnd(500,1100),rep:rnd(38,56),t:rnd(0,1),grudge:0,
+    rivals.push({h:h,coin:rnd(500,1100),rep:rnd(38,56),t:rnd(0,1),grudge:0,thugs:0,
                  pers:pick(PERSONALITIES),
                  trade:rtrades[i%rtrades.length],
                  share:0.10+Math.random()*0.07});
@@ -1528,7 +1700,7 @@ function newGame(name,trade,look){
     coin:420, rep:45, title:0, vig:100, age:21, gen:1,
     rivalry:{}, rivalCd:{}, support:{}, canvassed:{}, motions:{toll:0,assize:null,charters:{}},
     council:null, vacancy:null, sitting:null, ill:null, approach:null,
-    thugs:0, thugWage:THUG_BASE, thugLoyal:0, thugJob:null,
+    thugs:0, thugWage:THUG_BASE, thugLoyal:0, thugJob:null, thugNpcs:[],
     t:8, day:0,                       /* t = hour of day */
     bag:bag, cap:20, cart:0, road:[], robbers:[], robberCd:0, path:[], carterNpcs:[], mkt:mkt, mkt2:mkt2,
     sup:{0:{},1:{}}, deeds:{},
@@ -2258,6 +2430,8 @@ function stepRoad(dt){
   var busy=(G.t>6&&G.t<20)?0.035:0.007;
   if(Math.random()<busy*dt)spawnTraveller();
   spawnRobbers(dt);
+  spawnHouseThugs(dt);
+  stepThugs(dt);
   for(var i=G.road.length-1;i>=0;i--){
     var r=G.road[i];
     r.along+=r.dir*r.sp*dt;
@@ -2332,6 +2506,31 @@ function spawnRobbers(dt){
   G.robbers.push({x:p.x+(Math.random()-.5)*3,z:p.z+(Math.random()-.5)*3,
     sp:1.25,c:[62,54,46],skin:rnd(0,SKINCOLORS.length-1),
     walkT:0,gaitAmp:0,hx:0,hz:1,gender:0,demanded:false});
+}
+/* A house with men on its roll and a live grudge sends one after you, on
+   the same stretch of road an ordinary footpad works and sharing the same
+   one-at-a-time slot -- this is not a second layer of danger on top of the
+   first, it is who, some of the time, is actually behind it. */
+function spawnHouseThugs(dt){
+  if(!G.robbers)G.robbers=[];
+  if(G.robbers.length>=1)return;
+  if(G.robberCd>0)return;
+  var rn=roadNearest(G.px,G.pz);
+  if(rn.dist>ROADW)return;
+  if(rn.along<ROADLEN*0.18||rn.along>ROADLEN*0.82)return;
+  for(var i=0;i<(G.rivals||[]).length;i++){
+    var r=G.rivals[i];
+    if(!r||!(r.thugs>0)||!(r.grudge>=4))continue;
+    var odds=0.0009*Math.min(r.grudge,10);
+    if(Math.random()>=odds*dt)continue;
+    var ahead=rn.along+(Math.random()<0.5?1:-1)*rnd(16,26);
+    if(ahead<=0||ahead>=ROADLEN)continue;
+    var p=roadAt(ahead);
+    G.robbers.push({x:p.x+(Math.random()-.5)*3,z:p.z+(Math.random()-.5)*3,
+      sp:1.3,c:[62,54,46],skin:rnd(0,SKINCOLORS.length-1),
+      walkT:0,gaitAmp:0,hx:0,hz:1,gender:0,demanded:false,house:i});
+    return;
+  }
 }
 function stepRobbers(dt){
   if(!G.robbers)G.robbers=[];
@@ -3072,20 +3271,28 @@ function fightRender(){
   el.style.display="block";
 }
 function accosted(b){
+  /* a house's man, if that is who this is -- may not survive to the fight
+     itself (the rival could die of other causes between spawn and now) */
+  var hr=(b.house!=null)?G.rivals[b.house]:null;
+  var houseName=hr?hr.h:null;
   /* a footpad reads you before he commits: rank, a cart, and how hale you
-     look all weigh on whether he tries at all */
-  var deter=G.title*7+Math.round(G.rep*0.10)+(G.vig>70?8:0)+((G.cart||0)*4);
+     look all weigh on whether he tries at all -- a hired man a little less,
+     he is already paid whether he wins or not */
+  var deter=G.title*7+Math.round(G.rep*0.10)+(G.vig>70?8:0)+((G.cart||0)*4)-(houseName?10:0);
   if(rnd(1,100)<=deter){
     fleeFrom(b,G.px,G.pz);
     G.robberCd=170;
-    note("A footpad thought better of it");
+    if(hr)hr.grudge=Math.max(0,(hr.grudge||0)-1);
+    note(houseName?"One of House "+houseName+"'s men thought better of it":"A footpad thought better of it");
     say("He thinks better of it",
         "A man steps out of the hedge, looks you over properly, and finds somewhere else to be.");
     layout();return;
   }
   var take=Math.min(G.coin,Math.round(40+G.coin*0.06+rnd(0,60)));
-  ask("Stand and deliver",
-      "A man comes out of the trees with a knife held low and asks for your purse.\n\n"+
+  ask(houseName?"House "+houseName+"'s man":"Stand and deliver",
+      (houseName?("A man you do not know falls in beside you wearing House "+houseName+
+                  "'s colours under his coat, a knife held low.\n\n"):
+                 "A man comes out of the trees with a knife held low and asks for your purse.\n\n")+
       "He wants about "+fmt(take)+".",
       "Set about him",
       function(){
@@ -3093,25 +3300,34 @@ function accosted(b){
           /* he drew on you — defending yourself against a footpad on the
              high road is not a killing matter, whoever is watching */
           lawful:true,
-          label:"a footpad", hp:rnd(24,38), skill:rnd(0,10), purse:rnd(30,120),
+          label:houseName?"House "+houseName+"'s man":"a footpad",
+          hp:rnd(24,38), skill:rnd(0,10)+(houseName?4:0), purse:rnd(30,120),
           onWin:function(F){
             var kk=G.robbers.indexOf(b); if(kk>=0)G.robbers.splice(kk,1);
+            /* a hired man's purse comes out of the house that sent him, and
+               that hire is spent -- it does not walk home to be sent again */
+            if(hr){ hr.thugs=Math.max(0,(hr.thugs||0)-1); hr.grudge=Math.max(0,(hr.grudge||0)-2); }
             G.coin+=F.purse;
             if(!G.corpses)G.corpses=[];
             G.corpses.push({x:F.fx,z:F.fz,until:G.day*DAYH+G.t+rnd(8,16),ang:Math.random()*6.2832,
               c:[96,80,62],skin:rnd(0,SKINCOLORS.length-1),gender:0,uid:rnd(900,999)});
-            note("Killed a footpad on the road");
+            note(houseName?("Killed House "+houseName+"'s man on the road"):"Killed a footpad on the road");
             note("He does not get up. "+fmt(F.purse)+" off him.");
           },
           onLose:function(F){
             var kk=G.robbers.indexOf(b); if(kk>=0)G.robbers.splice(kk,1);
+            var lost=Math.min(G.coin,take);
             G.coin=Math.max(0,G.coin-take);
-            note("Beaten and robbed on the road: "+take);
+            /* what he takes goes into the house's strongbox, not nowhere */
+            if(hr){ hr.coin=(hr.coin||0)+lost; hr.grudge=Math.max(0,(hr.grudge||0)-2); }
+            note(houseName?("Beaten and robbed by House "+houseName+"'s man: "+take):
+                            ("Beaten and robbed on the road: "+take));
             note("Beaten on the road. He took "+fmt(take)+".");
           },
           onFlee:function(F){
             var kk=G.robbers.indexOf(b); if(kk>=0)G.robbers.splice(kk,1);
-            note("Ran from a footpad");
+            if(hr)hr.grudge=Math.max(0,(hr.grudge||0)-1);
+            note(houseName?("Ran from House "+houseName+"'s man"):"Ran from a footpad");
             note("You ran. He is still back there shouting.");
           }
         });
@@ -9645,6 +9861,10 @@ var GLB_POSE_STEPS=24, GLB_POSE_CACHE={};
    quarter of them. Same numbers here so a modelled child and a
    procedural one are the same child. */
 var GLB_KID_SCALE=0.60, GLB_KID_HEAD=1.95;
+/* Painted faces, behind one switch. Good enough for now; the ceiling is
+   the head itself -- 500 triangles with no sockets or mouth cavity -- not
+   the projection or the paint. Set to 0 to go back to blank heads. */
+var GLB_FACE_PAINT=1;
 function glbHeadJoint(ch){
   if(ch._headJ!==undefined)return ch._headJ;
   var skin=ch.skins[0], out=-1;
@@ -9704,7 +9924,7 @@ function glbPlace(op,ch,posed,x,z,gy,hx,hz){
   for(var k=0,ti=0;k+2<idx.length;k+=3,ti++){
     var a=idx[k],b=idx[k+1],c=idx[k+2];
     var isFace=false;
-    if(hu&&hu.on[a]&&hu.on[b]&&hu.on[c]){
+    if(GLB_FACE_PAINT&&hu&&hu.on[a]&&hu.on[b]&&hu.on[c]){
       /* A projector throws the image onto everything in its path, so the
          back of the skull would get a mirrored face. Only triangles whose
          normal actually points forward take it, and only where all three
@@ -11377,6 +11597,12 @@ function glDynamic(){
     var rby=footH(rb.x,rb.z);
     glPerson(op,rb.x,rb.z,rb.c,false,false,rb.skin,rb.walkT,rb.gaitAmp,rb.hx,rb.hz,0,false,rby,rb.uid||4,0,0,"hooded");
     shadowBlob(bl,rb.x,rby+.003,rb.z,.5,0.30);}
+  /* your own men, standing about your door or out on a piece of work */
+  if(G.thugNpcs)for(i=0;i<G.thugNpcs.length;i++){var tg=G.thugNpcs[i];
+    if(FIGHT&&!FIGHT.over&&FIGHT.foe===tg)continue;
+    var tgy=footH(tg.x,tg.z);
+    glPerson(op,tg.x,tg.z,tg.c,false,false,tg.skin,tg.walkT,tg.gaitAmp,tg.hx,tg.hz,0,false,tgy,tg.uid||7,0,0,"hooded");
+    shadowBlob(bl,tg.x,tgy+.003,tg.z,.5,0.30);}
   if(G.guards)for(i=0;i<G.guards.length;i++){var g=G.guards[i];
     if(FIGHT&&!FIGHT.over&&FIGHT.foe===g)continue;     /* the fight draws him */
     var gy=footH(g.x,g.z);
@@ -11634,7 +11860,12 @@ function updateCam(){
   /* the focus point now sits on the ground beneath it, and the eye is
      pushed up if a hill would otherwise rise through it */
   var groundY=(G&&!inRoom()&&typeof groundH==="function")?groundH(cam.fx,cam.fz):0;
-  var tx=cam.fx,tz=cam.fz,ty=groundY+2.0;
+  /* The aim point was a flat 2m up, which is fine from across the square
+     and wrong the moment you come close: at half a metre the camera looks
+     straight over the top of a 1.7m head. It drops toward face height as
+     the camera closes in. */
+  var ty=groundY+Math.min(2.0,1.55+cam.dist*0.08);
+  var tx=cam.fx,tz=cam.fz;
   var px=tx+d*ce*Math.sin(cam.az),py=ty+d*se,pz=tz+d*ce*Math.cos(cam.az);
   if(G&&!inRoom()&&typeof groundH==="function"){
     var minY=groundH(px,pz)+1.6;
@@ -13122,7 +13353,7 @@ function newDay(){
       if(Math.random()<0.05){
         var used=[];for(var k=0;k<G.rivals.length;k++)if(G.rivals[k])used.push(G.rivals[k].h);
         var nh=pick(HOUSE.filter(function(x){return used.indexOf(x)<0;}));
-        if(nh){G.rivals[i]={h:nh,coin:rnd(300,700),rep:rnd(30,48),t:0,grudge:0,
+        if(nh){G.rivals[i]={h:nh,coin:rnd(300,700),rep:rnd(30,48),t:0,grudge:0,thugs:0,
                             pers:pick(PERSONALITIES)};
           ensureRivalryPairs();note("House "+nh+" takes up the empty estate");rebuildTownKeepHere();}
       }
@@ -13709,7 +13940,7 @@ function newLine(carried){
   famInit(G.name,G.gen);     /* a new roll with one name on it */
   refreshMatches();          /* somebody is always about; you never wait a year */
   G.office=null; G.officeDays=0;
-  G.thugs=0; G.thugLoyal=0; G.thugJob=null;
+  G.thugs=0; G.thugLoyal=0; G.thugJob=null; G.thugNpcs=[];
   G.deeds={}; G.homeId=null;
   G.shops=[{store_in:0,store_out:0,prog:0,workers:0,carters:0,lvl:1,
             walkIns:0,walkCoin:0,bId:"shop",trade:G.trade}];
@@ -13975,7 +14206,7 @@ function sleep(){
   advanceTime(toMorning);
   G.vig=100;note("Slept until morning");
   /* the marriage bed: a night at home with the person you married */
-  if(atHome&&G.spouse&&!G.expecting&&G.age<52&&G.kids.length<5){
+  if(atHome&&G.spouse&&!G.expecting&&G.age<46&&G.kids.length<5){
     var chance=0.16+Math.max(0,(38-G.age))*0.004;
     if(Math.random()<chance){
       /* nine months, on a year of twenty-four days */
@@ -16038,6 +16269,22 @@ function drawHere(){
       if((G.thugs||0)<thugCap())
         h+='<button class="btn sm" onclick="hireThug()">Take a man on &middot; '+fmt(thugHireCost())+'</button>';
       if(G.thugs)h+='<button class="btn sm" onclick="dismissThug()">Let one go</button>';
+      /* each man on the roll, and what he is doing about it */
+      if(G.thugs){
+        syncThugBodies();
+        h+='<p class="fine" style="margin-top:8px">Your men, and where they are:</p>';
+        for(var tq=0;tq<(G.thugNpcs||[]).length;tq++){
+          var tt=G.thugNpcs[tq];
+          var what=tt.order==="posted"?("on a beat"+(tt.lifted?" &middot; "+fmt(tt.lifted)+" lifted":"")):
+                   tt.order==="sent"?("out after House "+((G.rivals[tt.ri]||{}).h||"?")):
+                   (tt.cool>0?"lying low":"at your door");
+          h+='<table class="tbl"><tr><td class="g">Man '+(tq+1)+'</td><td>'+what+'</td></tr></table>';
+          if(tt.order!=="posted")
+            h+='<button class="btn sm" onclick="thugOrder('+tq+',\'posted\');layout()">Post him where you stand</button>';
+          if(tt.order!=="idle")
+            h+='<button class="btn sm" onclick="thugOrder('+tq+',\'idle\');layout()">Call him in</button>';
+        }
+      }
       h+='<p class="fine" style="margin-top:8px">What you pay is what they are worth to you when a bailiff leans on them.</p>';
       h+='<button class="btn sm" onclick="setThugWage(1)">'+THUG_BASE+'/day &middot; the going rate</button>'+
          '<button class="btn sm" onclick="setThugWage(1.7)">'+Math.round(THUG_BASE*1.7)+'/day &middot; well kept</button>'+
@@ -16958,6 +17205,7 @@ $("resume").onclick=function(){
     if(G.shop.carters===undefined)G.shop.carters=0;
     if(!G.rivalCd)G.rivalCd={};
     if(G.thugs===undefined){G.thugs=0;G.thugWage=THUG_BASE;G.thugLoyal=0;G.thugJob=null;}
+    if(!G.thugNpcs)G.thugNpcs=[];
     if(!G.sup)G.sup={0:{},1:{}};
     if(!G.deeds)G.deeds={};
     if(!G.support)G.support={};
@@ -17014,7 +17262,7 @@ $("resume").onclick=function(){
       var used=G.rivals.map(function(r){return r.h;});
       while(G.rivals.length<4){
         var h=pick(HOUSE.filter(function(x){return used.indexOf(x)<0;}));used.push(h);
-        G.rivals.push({h:h,coin:rnd(400,900),rep:rnd(35,55),t:0,grudge:0});
+        G.rivals.push({h:h,coin:rnd(400,900),rep:rnd(35,55),t:0,grudge:0,thugs:0});
       }
     }
     $("start").style.display="none";$("game").style.display="block";
