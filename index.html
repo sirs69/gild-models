@@ -216,7 +216,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v6.078</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.001</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -579,20 +579,28 @@ function orderHit(ri,goYourself){
      Kidnap        -- needs the second level; he is held for ransom.
    Only a smuggler keeps a den. A baker with a thieves' guild is somebody
    else's game. */
-var DEN_LEVELS=[
-  {n:"Smuggler's Den", cost:1400, men:2, d:"Pockets, and doors if you insist."},
-  {n:"Thieves' Den",   cost:3200, men:3, d:"Room to hold a man who is worth holding."},
-  {n:"Thieves' Guild", cost:7000, men:5, d:"Nothing in the town is quite out of reach."}
-];
-function denLvl(){ return (G.den&&G.den.lvl)||0; }
-function denName(){ return denLvl()?DEN_LEVELS[denLvl()-1].n:"no den"; }
-function denCap(){ return denLvl()?DEN_LEVELS[denLvl()-1].men:0; }
-function denCanKidnap(){ return denLvl()>=2; }
-function denAt(){
-  /* the den sits behind your own warehouse */
-  var b=null;
-  for(var i=0;i<B.length;i++)if(B[i].id===(G.shop&&G.shop.bId||"shop")){b=B[i];break;}
-  return b?{x:b.dx-2.2,z:b.dz-2.2}:{x:G.px,z:G.pz};
+/* One building, upgraded through three tiers, was a single obvious
+   address: a bailiff who could not be bothered to check six ordinary
+   houses can still watch the one place in town with a sign that says
+   Thieves' Guild on it. Real dens instead -- ordinary-looking buildings,
+   bought like any other plot, each holding a couple of men. Owning more
+   of them scattered around town is how you grow the operation and how
+   you stay uninteresting to a watch that was never paid enough to check
+   every house. */
+var DEN_CAP_EACH=2;
+function denBuildings(){
+  return B.filter(function(b){return b.kind==="den";});
+}
+function denCount(){ return denBuildings().length; }
+function denCap(){ return denCount()*DEN_CAP_EACH; }
+function denCanKidnap(){ return denCount()>=2; }
+function denAt(idx){
+  /* thieves are assigned to whichever den has room, round-robin, so they
+     do not all pile into the first one built */
+  var ds=denBuildings();
+  if(!ds.length)return {x:G.px,z:G.pz};
+  var b=ds[(idx||0)%ds.length];
+  return {x:b.dx,z:b.dz};
 }
 function denPanel(){
   /* Its own panel, and NOT behind a title. The den was nested inside the
@@ -602,17 +610,16 @@ function denPanel(){
   var h="";
   if(G.trade!=="smuggler")return h;
       h+='<h3 style="margin-top:14px">The den</h3>';
-      if(!denLvl()){
-        h+='<p class="fine">Thieves want somewhere to come back to. '+
-           DEN_LEVELS[0].n+' costs '+fmt(DEN_LEVELS[0].cost)+'.</p>'+
-           '<button class="btn sm" onclick="denBuild()">Open a '+DEN_LEVELS[0].n+'</button>';
+      if(!denCount()){
+        h+='<p class="fine">Thieves want somewhere to come back to. A den costs '+
+           fmt(BUILD_KINDS.den.cost)+' and holds '+DEN_CAP_EACH+'. Build one from here, or from the '+
+           'Build menu on any plot -- an ordinary house draws no eye, and a second one draws less than a bigger one would.</p>'+
+           '<button class="btn sm" onclick="denBuild()">Put up a den here</button>';
       } else {
-        h+='<table class="tbl"><tr><td class="g">The house</td><td>'+esc(denName())+'</td></tr>'+
+        h+='<table class="tbl"><tr><td class="g">Dens</td><td>'+denCount()+'</td></tr>'+
            '<tr><td class="g">Thieves</td><td>'+(G.thieves||0)+' of '+denCap()+'</td></tr>'+
-           '<tr><td class="g">Kidnap</td><td>'+(denCanKidnap()?"within reach":"wants a larger house")+'</td></tr></table>';
-        if(denLvl()<DEN_LEVELS.length)
-          h+='<button class="btn sm" onclick="denBuild()">Take it up to '+
-             esc(DEN_LEVELS[denLvl()].n)+' &middot; '+fmt(DEN_LEVELS[denLvl()].cost)+'</button>';
+           '<tr><td class="g">Kidnap</td><td>'+(denCanKidnap()?"within reach":"wants a second den")+'</td></tr></table>';
+        h+='<button class="btn sm" onclick="denBuild()">Put up another den &middot; '+fmt(BUILD_KINDS.den.cost)+'</button>';
         if((G.thieves||0)<denCap())
           h+='<button class="btn sm" onclick="hireThief()">Take a thief on &middot; '+fmt(thiefHireCost())+'</button>';
         if(G.thieves)h+='<button class="btn sm" onclick="dismissThief()">Turn one out</button>';
@@ -667,29 +674,29 @@ function denPanel(){
       }
   return h;
 }
+/* A convenience shortcut from the den panel: build one right where you
+   are standing, going through the same buildRefusal/coin checks as the
+   Build menu, rather than a second bespoke system. Open the real Build
+   menu if this spot will not do. */
 function denBuild(){
   if(G.trade!=="smuggler")
     return say("Not your trade","A den wants men who will not be missed and a reason for them to come and go. Your business is not that business.");
-  var nx=denLvl();
-  if(nx>=DEN_LEVELS.length)return say("Nothing above this","There is no larger house for this kind of work in Gild.");
-  var D=DEN_LEVELS[nx];
-  if(G.coin<D.cost)return say("Not enough",D.n+" wants "+fmt(D.cost)+".");
-  ask(nx?("Take it up to "+D.n+"?"):("Open a "+D.n+"?"),
-      D.d+"\n\n"+fmt(D.cost)+" now. Nobody writes it down.",
-      nx?"Take it up":"Open it",function(){
-    G.coin-=D.cost;
-    G.den=G.den||{lvl:0};
-    G.den.lvl=nx+1;
-    note(nx?("The den is now a "+D.n+"."):("Opened a "+D.n+"."));
-    layout();
-  });
+  var d=BUILD_KINDS.den;
+  var why=buildRefusal(G.px,G.pz,d.w,d.d);
+  if(why)return say("Not here","Not where you are standing -- "+why+". Use Build to try elsewhere.");
+  if(G.coin<d.cost)return say("Not enough",d.n+" costs "+fmt(d.cost)+".");
+  ask("Put up a den here?",
+      "An ordinary-looking house, nothing about it worth a second glance. "+
+      fmt(d.cost)+" now, and it holds "+DEN_CAP_EACH+" men.\n\n"+
+      "Every den you own is one more place the watch has to think to check.",
+      "Raise it",function(){ doBuild("den",G.px,G.pz); });
 }
 function thiefWage(){ return 54; }
 function thiefHireCost(){ return 150+(G.thieves||0)*120; }
 function hireThief(){
-  if(!denLvl())return say("Nowhere to put him","A thief without a den is a man loitering in your yard.");
+  if(!denCount())return say("Nowhere to put him","A thief without a den is a man loitering in your yard.");
   if((G.thieves||0)>=denCap())
-    return say("The den is full",denName()+" holds "+denCap()+". A larger house would hold more.");
+    return say("The dens are full",fmt(denCount())+" den"+(denCount()===1?"":"s")+" hold"+(denCount()===1?"s":"")+" "+denCap()+" between them. Another den holds more.");
   var c=thiefHireCost();
   if(G.coin<c)return say("Not enough","He wants "+fmt(c)+" to come in out of the rain.");
   G.coin-=c; G.thieves=(G.thieves||0)+1;
@@ -707,10 +714,13 @@ function syncThiefBodies(){
   G.thieves=want;
   while(G.thiefNpcs.length>want)G.thiefNpcs.pop();
   while(G.thiefNpcs.length<want){
-    var d=denAt();
+    /* each man belongs to one den, round-robin, so several small houses
+       actually get used instead of everyone piling into the first one */
+    var home=G.thiefNpcs.length%Math.max(1,denCount());
+    var d=denAt(home);
     G.thiefNpcs.push({x:d.x+(Math.random()-.5)*1.5,z:d.z+(Math.random()-.5)*1.5,
       sp:1.25,c:[52,48,56],skin:rnd(0,SKINCOLORS.length-1),
-      walkT:0,gaitAmp:0,hx:0,hz:1,gender:0,
+      walkT:0,gaitAmp:0,hx:0,hz:1,gender:0,home:home,
       order:"idle", tx:null, tz:null, bId:null, ri:null, cool:0, took:0, sel:false});
   }
 }
@@ -723,7 +733,7 @@ function thiefSelected(){
 function thiefToggle(i){ var t=(G.thiefNpcs||[])[i]; if(t)t.sel=!t.sel; }
 function thiefSelectAll(on){ var L=G.thiefNpcs||[]; for(var i=0;i<L.length;i++)L[i].sel=!!on; }
 function thiefToDen(t,why){
-  var d=denAt();
+  var d=denAt(t.home);
   t.order="hiding"; t.tx=d.x; t.tz=d.z; t.bId=null; t.ri=null; t.cool=120;
   if(why)note(why);
 }
@@ -733,7 +743,7 @@ function thiefOrder(i,order,arg){
   if(order==="lifting"){ t.tx=G.px; t.tz=G.pz; }
   else if(order==="burgling"){ t.bId=arg; }
   else if(order==="snatching"){ t.ri=arg; }
-  else { var d=denAt(); t.tx=d.x; t.tz=d.z; }
+  else { var d=denAt(t.home); t.tx=d.x; t.tz=d.z; }
 }
 function thiefOrderSel(order,arg){
   var sel=thiefSelected(), n=0;
@@ -1259,6 +1269,12 @@ var BUILD_KINDS={
      notices. */
   cottage: {n:"Workers' cottages", w:8, d:4.4, h:3.2, cost:900,
             wall:[176,168,150], roof:[96,66,44], beds:4},
+  /* A smuggler's own, separate from the general list below: gated to the
+     trade the same way shop2 is gated by rank, and deliberately plain --
+     the same wall and roof as an ordinary house, because looking like one
+     is the entire point of building more than one. */
+  den:     {n:"A den", w:4, d:3.6, h:3.0, cost:1100,
+            wall:[190,182,164], roof:[112,74,44]},
   /* ── businesses you can put up yourself ─────────────────────────────
      Coin is scarce in the first weeks, so the cheap end of this list has
      to be reachable on a good fortnight's trade rather than a fortune: a
@@ -1323,6 +1339,7 @@ function offerBuild(x,z){
     var d=BUILD_KINDS[k], why=buildRefusal(x,z,d.w,d.d);
     if(!why&&G.coin<d.cost)why="costs more than you have";
     if(!why&&k==="shop2"&&(G.shops||[]).length>=Math.max(1,G.title))why="your rank allows "+Math.max(1,G.title)+" workshop"+(Math.max(1,G.title)>1?"s":"");
+    if(!why&&k==="den"&&G.trade!=="smuggler")why="not your trade";
     var extra=d.rent?' &middot; '+fmt(d.rent)+' a day':(d.beds?' &middot; beds for '+d.beds:'');
     h+='<button class="btn" style="width:100%;margin-top:6px;text-align:left'+(why?';opacity:.5':'')+'" '+
        (why?'disabled':'onclick="doBuild(\''+k+'\','+x.toFixed(1)+','+z.toFixed(1)+')"')+'>'+
@@ -1336,7 +1353,7 @@ function offerBuild(x,z){
    where the crew sleep. "rival" was a rival family's estate to everything
    that read it, so a rented house you built turned into House Nobody. */
 var BUILT_AS={home:"town",rival:"town",stall:"town",store:"town",bizsm:"town",bizlg:"town",
-              shop2:"shop2",cottage:"cottage"};
+              shop2:"shop2",cottage:"cottage",den:"den"};
 function placeBuilt(rec){
   var d=BUILD_KINDS[rec.bk]; if(!d)return null;
   /* the door faces the nearest street, not always the same compass point */
@@ -1360,6 +1377,8 @@ function doBuild(kind,x,z){
   if(G.coin<d.cost)return say("Not enough",d.n+" costs "+fmt(d.cost)+" to put up.");
   if(kind==="shop2"&&(G.shops||[]).length>=Math.max(1,G.title))
     return say("Not yet","A man of your standing may run "+Math.max(1,G.title)+" workshop"+(Math.max(1,G.title)>1?"s":"")+".");
+  if(kind==="den"&&G.trade!=="smuggler")
+    return say("Not your trade","Your business is not that business.");
   G.coin-=d.cost;
   var id="built"+(G.nextBuildId=(G.nextBuildId||1)+1);
   /* kept on G, because the town is laid out again from nothing every time
@@ -2119,9 +2138,14 @@ function newGame(name,trade,look){
        itself: producers carve up a fixed appetite instead of piling into a
        pool that only ever grows. */
     var rtrades=["baker","smith","apothecary","smuggler"];
+    /* Every house's own colour, on its own flag, on every estate and
+       workshop it holds -- fixed at creation and never reused, so House
+       Falkenrath's crimson is Falkenrath's crimson for the whole game,
+       the same way the burghers already wear a colour that names them. */
     rivals.push({h:h,coin:rnd(500,1100),rep:rnd(38,56),t:rnd(0,1),grudge:0,thugs:0,
                  pers:pick(PERSONALITIES),
                  trade:rtrades[i%rtrades.length],
+                 col:RIVAL_COLS[i%RIVAL_COLS.length],
                  share:0.10+Math.random()*0.07});
   }
   G={
@@ -3597,7 +3621,7 @@ function stepApproach(){
     return;
   }
   G.approach=null;
-  killNPC(t);
+  selectNpc(t);
 }
 function stepFleeing(dt){
   var lists=[G.npcs||[],G.robbers||[]];
@@ -3869,20 +3893,49 @@ function takeFromTraveller(r,purse){
    we lay a path: out to the road, along its curve, and off again at the
    far end. Short hops inside a town still go direct, because nobody walks
    out to the road to cross a market square. */
+/* Neither the street-lattice path nor the between-towns road ever checked
+   whether a building actually sat across one of its hops -- only slideTo
+   did, frame by frame, once someone was already walking it. slideTo can
+   slide along ONE face of an obstacle; it cannot route around one that
+   spans the whole width of a hop, so a walker aimed straight at a
+   building from a road waypoint could arrive at its edge and get no
+   further: pinned there, sliding a few centimetres back and forth as the
+   collision pad and the tiny per-frame step interact, never actually
+   clearing it. blockerOf/cornerRoute already exist and already do the
+   detour math (used for a vendor heading home) -- this applies that same
+   check to every hop before the walk ever starts, not after it gets
+   stuck. */
+function patchPathAroundBuildings(pts){
+  if(!pts||pts.length<2)return pts;
+  var out=[pts[0]];
+  for(var i=0;i<pts.length-1;i++){
+    var a=out[out.length-1], b=pts[i+1];
+    if(lineBlocked(a[0],a[1],b[0],b[1])){
+      var bk=blockerOf(a[0],a[1],b[0],b[1]);
+      if(bk){
+        var cr=cornerRoute(a[0],a[1],bk,b[0],b[1]);
+        if(cr&&cr[0])out.push(cr[0]);
+      }
+    }
+    out.push(b);
+  }
+  return out;
+}
 function routeTo(tx,tz){
   var direct=Math.hypot(tx-G.px,tz-G.pz);
   var here2=townOf(G.px,G.pz), there=townOf(tx,tz);
   var from=roadNearest(G.px,G.pz), to=roadNearest(tx,tz);
-  if(direct<11)return [[tx,tz]];
+  if(direct<11)return patchPathAroundBuildings([[G.px,G.pz],[tx,tz]]).slice(1);
   /* inside Gild, walk the streets. The town is now large enough that a
      straight line crosses three rows of houses, and sliding along walls
      for forty paces is not walking anywhere. */
   if(here2===0&&there===0){
     var sp3=streetWalk(G.px,G.pz,tx,tz);
-    if(sp3)return sp3;
-    return [[tx,tz]];   /* nothing in the way: walk straight there */
+    if(sp3)return patchPathAroundBuildings([[G.px,G.pz]].concat(sp3)).slice(1);
+    return patchPathAroundBuildings([[G.px,G.pz],[tx,tz]]).slice(1);
   }
-  if(here2===there&&(direct<26||(from.dist>ROADW&&to.dist>ROADW)))return [[tx,tz]];
+  if(here2===there&&(direct<26||(from.dist>ROADW&&to.dist>ROADW)))
+    return patchPathAroundBuildings([[G.px,G.pz],[tx,tz]]).slice(1);
   var pts=[],pA=roadAt(from.along);
   if(from.dist>2.5)pts.push([pA.x,pA.z]);
   var stepD=(to.along>from.along)?7:-7;
@@ -3891,7 +3944,7 @@ function routeTo(tx,tz){
   }
   var pB=roadAt(to.along);pts.push([pB.x,pB.z]);
   pts.push([tx,tz]);
-  return pts;
+  return patchPathAroundBuildings([[G.px,G.pz]].concat(pts)).slice(1);
 }
 /* a walk from anywhere to anywhere: onto the nearest street, along the
    lattice, off at the far end. Returns null when the straight line is
@@ -3920,9 +3973,16 @@ function lineBlocked(ax,az,bx,bz){
   var dx=bx-ax,dz=bz-az,len=Math.hypot(dx,dz);
   if(len<0.01)return false;
   var steps=Math.ceil(len/1.6);
+  /* 0.2 was a thinner body than the one actually walking the result: real
+     movement collides at pad 0.48. A corridor that tested clear at 0.2
+     could still clip a building at the real 0.48, especially once the
+     walker had already drifted a little sideways resolving something
+     earlier on the same hop -- which is exactly how a path could validate
+     clean and then pin someone on a wall a few metres later. Checked with
+     a small margin past the real pad, not under it. */
   for(var i=1;i<steps;i++){
     var t=i/steps;
-    if(blockedAt(ax+dx*t,az+dz*t,0.2))return true;
+    if(blockedAt(ax+dx*t,az+dz*t,0.6))return true;
   }
   return false;
 }
@@ -4003,11 +4063,80 @@ function blockedAt(x,z,pad){
   }
   return false;
 }
+/* The furthest fraction of a step that is actually clear, found by
+   bisection rather than assumed to be all-or-nothing. A door set into
+   the middle of a long wall needs the last approach to creep the final
+   half-metre past the wall's own padding; trying only the full step or
+   nothing meant that last half-metre was simply never crossed, and a
+   walker heading for a door partway along a face would arrive beside
+   the building and go no further — the exact shape of church2, biz_coop
+   and biz_dyer's doors, all off the corner they got stuck at rather
+   than inside anything. */
+function safeFraction(ox,oz,nx,nz){
+  /* the fast path some callers actually need: for a genuinely short,
+     ordinary step this one check is enough, and ends here */
+  if(!blockedAt(nx,nz)&&!blockedAt(ox+(nx-ox)*0.5,oz+(nz-oz)*0.5))return 1;
+  /* otherwise a real bisection, which only assumes a single transition
+     from clear to blocked -- fine for a wall, not for a building that
+     sits in the middle with clear ground on both sides of it, which the
+     midpoint check above catches before this ever needs to run */
+  var lo=0,hi=1;
+  for(var i=0;i<12;i++){
+    var mid=(lo+hi)/2;
+    if(blockedAt(ox+(nx-ox)*mid,oz+(nz-oz)*mid))hi=mid; else lo=mid;
+  }
+  return lo;
+}
 function slideTo(o,nx,nz){
-  /* if they are already inside something, let them walk out — otherwise a
-     walker who starts in a footprint is trapped there for good */
-  if(blockedAt(o.x,o.z)){o.x=nx;o.z=nz;return true;}
-  if(!blockedAt(nx,nz)){o.x=nx;o.z=nz;return true;}
+  /* if they are already inside something, walk them OUT toward the nearest
+     clear ground rather than to an arbitrary target. The old version just
+     teleported to (nx,nz) every frame this was true -- fine for the one
+     legitimate case (spawned in a footprint), but grazing a pad boundary by
+     a hair of float noise also reads as "inside" for one frame, and once
+     that happened this branch kept firing every frame after (still
+     "inside" while mid-building) and walked the person straight through
+     the whole building with zero collision. Stepping toward the blocker's
+     edge instead of the target means grazing the boundary just nudges them
+     back out, and a walker genuinely dropped in a footprint still escapes. */
+  if(blockedAt(o.x,o.z)){
+    var nb0=nearestBlocker(o.x,o.z);
+    var step0=Math.hypot(nx-o.x,nz-o.z)||0.08;
+    if(nb0){
+      var ax0=o.x-nb0.x, az0=o.z-nb0.z, al0=Math.hypot(ax0,az0);
+      var ux0,uz0;
+      if(al0>1e-6){ux0=ax0/al0;uz0=az0/al0;}
+      else{ /* dead centre of the blocker: no directional cue from position
+               alone, so fall back to heading toward the intended target */
+        var tdx=nx-o.x, tdz=nz-o.z, tdl=Math.hypot(tdx,tdz)||1;
+        ux0=tdx/tdl; uz0=tdz/tdl;
+      }
+      o.x+=ux0*step0; o.z+=uz0*step0;
+    } else { o.x=nx;o.z=nz; }
+    return true;
+  }
+  /* Checking only whether the raw endpoint (nx,nz) was blocked, and
+     taking the full step whenever it wasn't, missed the case where a
+     building sits in the MIDDLE of a short step but both ends of it
+     happen to be clear -- which happens for real right at a pad's exact
+     boundary, where a walker moving in tiny per-frame increments can
+     have each step's endpoint flicker between just-inside and
+     just-outside blocked on floating-point noise. That reads as
+     grinding to a near-halt exactly at the edge of a building, on a
+     plain straight walk, with nothing about the situation "wedged". The
+     bisection is now the first and only test: it already returns 1
+     immediately in the ordinary unblocked case, so this costs nothing
+     when nothing is in the way, and it is what actually looks at the
+     ground in between rather than trusting either endpoint alone. */
+  var safe=safeFraction(o.x,o.z,nx,nz);
+  if(safe>=0.999){o.x=nx;o.z=nz;return true;}
+  if(safe>0.02){
+    /* land a hair short of the bisected boundary -- landing exactly on it
+       is what let float noise flip the NEXT frame's blockedAt(o.x,o.z) to
+       true and trip the "already inside" branch above, chaining into the
+       walk-through bug the branch itself used to cause */
+    var s=Math.max(0,safe-0.01);
+    o.x+=(nx-o.x)*s;o.z+=(nz-o.z)*s;return true;
+  }
   /* Walking square into a face, the old slide kept only the sliver of the
      step that ran along it, so a man crept along the well at a tenth of his
      pace until his stuck timer gave up the errand. The slide along a face
@@ -4658,6 +4787,11 @@ function removeNpc(npc,alive){
    gets its own — five of eight businesses were going unowned because the
    palette ran out before the list did. Kept dark and saturated so a coat
    reads at a distance and no two are easily confused. */
+/* The four dynasties, and you -- each a fixed, bold colour distinct from
+   the muted, more numerous burgher palette below, so a flag reads as
+   "a house" at a glance rather than "somebody's house". */
+var RIVAL_COLS=[[176,32,36],[38,66,158],[36,120,64],[188,140,24]];
+var PLAYER_COL=[150,196,196];  /* your own -- the only cool colour in the palette, and nobody else's */
 var BURGHER_COLS=[
   [138,42,48],[46,74,124],[92,52,116],[36,96,82],[150,104,28],
   [110,38,92],[58,88,42],[164,76,32],[42,102,120],[128,56,64],
@@ -5697,7 +5831,7 @@ function lampG(x,z){
 }
 /* a small pennant marking a building the player owns — pole plus a
    triangular cloth, planted at the ridge so it reads from any angle */
-function flagG(x,z,poleH,big,col){
+function flagG(x,z,poleH,big,col,col2){
   var _cy=CURY; CURY=standH(x,z);
   var s=big?2.35:1.0;                       /* the tavern flies a big one */
   var px=x,pz=z,tip=poleH+1.6*s;
@@ -5710,9 +5844,6 @@ function flagG(x,z,poleH,big,col){
   var t=(typeof WORLDT==="number")?WORLDT:0;
   var wav=Math.sin(t*1.7+x*0.3)*0.10*s, wav2=Math.sin(t*1.7+x*0.3+1.1)*0.16*s;
   var mid=(y0+y1)/2;
-  var lobe=[[px,y0,pz],[px,y1,pz],
-            [px+len*0.5,y1+wav,pz+wav*1.6],
-            [px+len*0.5,y0+wav,pz+wav*1.6]];
   /* cloth has two sides and they are not in the same place. Drawn at
      identical coordinates the two faces fight over every pixel and the flag
      comes out hatched like a barcode. */
@@ -5726,14 +5857,35 @@ function flagG(x,z,poleH,big,col){
     faceC(fr,c);
     faceC(bk.slice().reverse(),sh(c,.80));
   }
-  twoSided(lobe,fc);
+  if(!col2){
+    var lobe=[[px,y0,pz],[px,y1,pz],
+              [px+len*0.5,y1+wav,pz+wav*1.6],
+              [px+len*0.5,y0+wav,pz+wav*1.6]];
+    twoSided(lobe,fc);
+  } else {
+    /* the tavern's own flag, and the only one anywhere with more than one
+       colour on it -- nothing that belongs to a dynasty is striped, and
+       nothing striped belongs to a dynasty, so the two are never confused
+       even at a glance */
+    var cols=[fc,col2,fc];
+    var n=cols.length;
+    for(var k=0;k<n;k++){
+      var f0=k/n, f1=(k+1)/n;
+      var xa=px+len*0.5*f0, xb=px+len*0.5*f1;
+      var wA=wav*f0, wB=wav*f1;
+      var band=[[xa,y0,pz+wA*1.6],[xa,y1,pz+wA*1.6],
+                [xb,y1+wB,pz+wB*1.6],[xb,y0+wB,pz+wB*1.6]];
+      twoSided(band,cols[k]);
+    }
+  }
   /* the fly end, cut as a swallowtail */
   var a=[px+len*0.5,y1+wav,pz+wav*1.6], b2=[px+len*0.5,y0+wav,pz+wav*1.6];
   var tipU=[px+len,y1-0.10*s+wav2,pz+wav2*1.6];
   var tipL=[px+len,y0+0.10*s+wav2,pz+wav2*1.6];
   var notch=[px+len*0.74,mid+wav2*0.6,pz+wav2*1.1];
-  twoSided([a,tipU,notch],sh(fc,1.02));
-  twoSided([b2,notch,tipL],sh(fc,0.96));
+  var flyc=col2||fc;
+  twoSided([a,tipU,notch],sh(flyc,1.02));
+  twoSided([b2,notch,tipL],sh(flyc,0.96));
   /* a finial on the pole, so it does not end in a stump */
   boxG(px,pz,.20*s,.20*s,tip-0.06*s,tip+0.10*s,[196,166,84]);
   CURY=_cy;
@@ -7870,15 +8022,23 @@ function buildGeo(){
        property from the town's. Everything you hold flies the same big
        red flag: your trade house, your home, every deed you have bought
        and everything you have built. */
-    var mine=(b.kind==="shop"||b.kind==="shop2"||b.kind==="home"||
+    var mine=(b.kind==="shop"||b.kind==="shop2"||b.kind==="home"||b.kind==="den"||
               (G.deeds&&G.deeds[b.id]));
-    if(mine)flagG(b.x-b.w*0.32,b.z+b.d*0.32,b.h+2.6,1,[206,38,32]);
+    /* your own colour, not a copy of the tavern's -- the two used to be
+       within a few shades of the same red, so a den you had just built
+       and the inn across the square read as the same flag from any
+       distance */
+    if(mine)flagG(b.x-b.w*0.32,b.z+b.d*0.32,b.h+2.6,1,PLAYER_COL);
+    /* a rival house flies its own dynasty colour on everything it holds */
+    else if(b.ownerRival!=null&&G.rivals&&G.rivals[b.ownerRival])
+      flagG(b.x-b.w*0.30,b.z+b.d*0.34,b.h+1.9,0,G.rivals[b.ownerRival].col||RIVAL_COLS[b.ownerRival%4]);
     /* somebody else's house or business flies THEIR colour — the same
        colour as the coat the owner is wearing in the street */
     else if(b.ownerCol)flagG(b.x-b.w*0.30,b.z+b.d*0.34,b.h+1.9,0,b.ownerCol);
     /* the tavern flies a great one, so you can find it from anywhere in the
-       town without hunting for the door */
-    if(b.kind==="tavern")flagG(b.x-b.w*0.30,b.z+b.d*0.42,b.h+3.4,1,[196,44,36]);
+       town without hunting for the door -- striped, and the only flag in
+       Gild that is, so it is never mistaken for a dynasty's */
+    if(b.kind==="tavern")flagG(b.x-b.w*0.30,b.z+b.d*0.42,b.h+3.4,1,[196,44,36],[230,206,140]);
     CURY=0;
   }
 
@@ -16723,6 +16883,14 @@ function drawHere(){
     if(canLabour())
       h+='<button class="btn gold" onclick="dayLabour()">Take a day\'s labour &middot; '+fmt(labourPay())+'</button>';
     for(g in GOODS)if(G.bag[g]>0)h+='<button class="btn" onclick="sell(\''+g+'\')">Sell '+G.bag[g]+' '+GOODS[g].n+'</button>';
+  } else if(here.kind==="den"){
+    /* An actual building you can walk up to now, so it needs its own
+       outdoor panel -- it used to have none at all, and the only place
+       the den's own management showed up was at the tavern, which is
+       also where the old \"Inn still says the den is inside it\" came from. */
+    h='<div class="sub">Den</div><h2>'+esc(here.n||"A den")+'</h2>';
+    h+='<p>An ordinary house, on the outside.</p>';
+    h+=denPanel();
   } else if(here.kind==="tavern"){
     h='<div class="sub">Tavern</div><h2>'+esc(here.n)+'</h2>';
     h+='<p>Ale, hiring, and everything anyone knows about everyone.</p>';
@@ -16767,8 +16935,6 @@ function drawHere(){
       h+='<button class="btn sm" onclick="buyCart('+ci2+')">'+esc(CC.n)+' &middot; +'+CC.cap+
          ' carried &middot; '+fmt(CC.cost-CARTS[G.cart||0].cost)+'</button>';
     }
-    /* the den first: it answers to no rank, unlike the back room */
-    h+=denPanel();
     /* ── the back room: men on the roll ────────────────────────────── */
     h+='<h3 style="margin-top:14px">The back room</h3>';
     if(thugCap()<1){
@@ -17488,9 +17654,9 @@ function bindCanvas(){
           G.enterOn={x:best.dx,z:best.dz,b:best,room:roomFor,
                      until:G.day*DAYH+G.t+0.5};
           goTo(best.dx,best.dz); G.run=true;
-        } else if(same&&best.kind==="town"){
-          /* an ordinary house has no door you can open, but it does have a
-             deed — a second tap asks after it */
+        } else if(same&&(best.kind==="town"||best.kind==="cottage"||best.kind==="shop2"||best.kind==="rival"||best.kind==="biz")){
+          /* nothing else has a door you can open, but it does have a
+             deed — a second tap asks after it instead of doing nothing */
           deedSheet(best);
         } else goTo(best.dx,best.dz);
       }
@@ -17767,7 +17933,7 @@ $("resume").onclick=function(){
     if(!G.rivalCd)G.rivalCd={};
     if(G.thugs===undefined){G.thugs=0;G.thugWage=THUG_BASE;G.thugLoyal=0;G.thugJob=null;}
     if(!G.thugNpcs)G.thugNpcs=[];
-    if(G.thieves===undefined){G.den=G.den||null;G.thieves=0;}
+    if(G.thieves===undefined){G.thieves=0;}
     if(!G.thiefNpcs)G.thiefNpcs=[];
     if(!G.prisoners)G.prisoners=[];
     if(!G.sup)G.sup={0:{},1:{}};
@@ -17826,7 +17992,8 @@ $("resume").onclick=function(){
       var used=G.rivals.map(function(r){return r.h;});
       while(G.rivals.length<4){
         var h=pick(HOUSE.filter(function(x){return used.indexOf(x)<0;}));used.push(h);
-        G.rivals.push({h:h,coin:rnd(400,900),rep:rnd(35,55),t:0,grudge:0,thugs:0});
+        G.rivals.push({h:h,coin:rnd(400,900),rep:rnd(35,55),t:0,grudge:0,thugs:0,
+                       col:RIVAL_COLS[i%RIVAL_COLS.length]});
       }
     }
     $("start").style.display="none";$("game").style.display="block";
