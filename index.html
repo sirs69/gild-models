@@ -216,7 +216,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.001</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.005</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -4994,6 +4994,11 @@ function fireCarter(){
 /* ════════════════ RENDERER ════════════════ */
 var cam={az:0.7,el:0.78,dist:28,fx:0,fz:0};
 var tcv,tcx,tcw=0,tch=0,GEO=[],FLOORN=0,LIT=[1,1,1],LOWQ=false,LOWQSTRIKES=0;
+/* faceC/face normally bake into the static town mesh. Flags need to be
+   rebuilt every frame to wave, so anything that draws while this is set
+   lands in that frame's dynamic batch instead, through the same geometry
+   helpers (faceC, boxG, flagG) the static pass already uses. */
+var GEOTARGET=null;
 var LASTTAPB=null,LASTTAPT=0;   /* for double-tap-to-enter */
 
 function sh(c,f){return [c[0]*f,c[1]*f,c[2]*f];}
@@ -5071,7 +5076,7 @@ function lyingFigure(out,cx,cz,yb,who){
 }
 function mixc(a,b,t){return [a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t];}
 var CURTILE=-1;
-function face(pts,col,em,win){GEO.push({p:pts,c:col,em:em?1:0,win:win?1:0,tile:CURTILE});}
+function face(pts,col,em,win){(GEOTARGET||GEO).push({p:pts,c:col,em:em?1:0,win:win?1:0,tile:CURTILE});}
 /* boxG and gableG lift everything they draw by CURY, the height of the
    ground under the thing being built. A raw face() does not, and every
    place that mixed the two drew something at sea level while the rest of
@@ -5082,7 +5087,7 @@ function face(pts,col,em,win){GEO.push({p:pts,c:col,em:em?1:0,win:win?1:0,tile:C
 function faceC(pts,col,em,win){
   var q=[],i;
   for(i=0;i<pts.length;i++)q.push([pts[i][0],pts[i][1]+CURY,pts[i][2]]);
-  GEO.push({p:q,c:col,em:em?1:0,win:win?1:0,tile:CURTILE});
+  (GEOTARGET||GEO).push({p:q,c:col,em:em?1:0,win:win?1:0,tile:CURTILE});
 }
 function boxG(cx,cz,w,d,y0,y1,col,noTop,tile){
   y0+=CURY;y1+=CURY;
@@ -6002,8 +6007,10 @@ var ROOMS={
      room you can touch both walls of. */
   /* Depth 7.5, not 11: once the cells stopped being the far third of the
      floor the leftover corridor was nearly nine metres of nothing. The
-     watch's end wants a table and standing room, not a hall. */
-  gaol:  {w:9,d:7.5,h:2.9, mind:2.4, maxd:5.0, sub:"The cells", bare:1}
+     watch's end wants a table and standing room, not a hall.
+     Shrunk again, to 7.2 by 6.0: even divided into three cells and a
+     corridor, 9 by 7.5 still had room to pace in. It shouldn't. */
+  gaol:  {w:7.2,d:6.0,h:2.6, mind:1.8, maxd:3.8, sub:"The cells", bare:1}
 };
 /* hearths and candles light a room from inside it. LAMPS does the same job
    out in the street, but the street's list is only fed to the shader after
@@ -6385,6 +6392,30 @@ function wallTorch(x,z,H2){
   faceC([[x+.17,H2+.46,z+.17],[x-.17,H2+.46,z+.17],[x-.17,H2+1.02,z+.17],[x+.17,H2+1.02,z+.17]],[255,178,86],1);
   if(typeof ROOMLIGHTS!=="undefined"&&inRoom())ROOMLIGHTS.push([x,H2+0.7,z]);
 }
+/* a skull set into the stone -- blocky, like everything else built from
+   boxG, not a sculpted head. along: true for a wall running along x (the
+   skull sits proud along z), false for a wall running along z (proud
+   along x). out is which way it faces, +1 or -1. */
+function wallSkull(x,z,y,along,out){
+  var bone=[198,190,164];
+  var w=along?0.30:0.20, d=along?0.20:0.30;
+  boxG(x,z,w,d,y,y+0.24,bone);                        /* the cranium */
+  var jw=along?0.20:0.13, jd=along?0.13:0.20;
+  boxG(x,z,jw,jd,y-0.09,y+0.01,sh(bone,0.90));         /* the jaw */
+  var eo=0.09, ez=out*0.135;
+  if(along){
+    boxG(x-eo,z+ez,0.07,0.07,y+0.10,y+0.17,[16,14,12]);
+    boxG(x+eo,z+ez,0.07,0.07,y+0.10,y+0.17,[16,14,12]);
+  } else {
+    boxG(x+ez,z-eo,0.07,0.07,y+0.10,y+0.17,[16,14,12]);
+    boxG(x+ez,z+eo,0.07,0.07,y+0.10,y+0.17,[16,14,12]);
+  }
+  /* a streak of damp running down from it -- the only thing "disgusting"
+     costs here is a dark, half-see-through smear below the thing that
+     supposedly wept it */
+  faceC([[x-w*0.4,y-0.3,z+ez*0.6],[x+w*0.4,y-0.3,z+ez*0.6],
+         [x+w*0.3,y-1.1,z+ez*0.6],[x-w*0.3,y-1.1,z+ez*0.6]],[26,30,22]);
+}
 /* ── dressing a room ──────────────────────────────────────────────────
    Every interior was a shell with the one piece of furniture it needed for
    the mechanic and nothing else. These are the things that make a room a
@@ -6664,8 +6695,8 @@ function buildRoomGeo(kind){
        cell is a place a man cannot lie down straight in. Each of these is
        about two and a half metres square, divided by stone, with its own
        barred front and its own gate. */
-    var wet=[96,94,92];
-    roomShell(R,wet,panel,[78,76,72],0);
+    var wet=[60,64,52];   /* grey stone gone green-black with damp, not clean ashlar */
+    roomShell(R,wet,panel,[46,48,38],0);
     var iron=[88,82,76];
     var CELLD=2.3;                       /* how deep a cell is */
     var barZ=-D/2+CELLD;                 /* the bars, close to the back wall */
@@ -6717,6 +6748,11 @@ function buildRoomGeo(kind){
     wallTorch(-W/2+0.42,barZ+1.6,2.0);
     wallTorch( W/2-0.42,barZ+1.9,2.0);
     wallTorch( W/2-0.42,D/2-2.6,2.0);
+    /* a few skulls set into the corridor wall — the last thing the last
+       man to leave one of these cells left behind, more or less */
+    wallSkull(-W/2+0.14,barZ+0.7,1.55,false,1);
+    wallSkull( W/2-0.14,D/2-1.2,1.60,false,-1);
+    wallSkull(-3.2,-D/2+0.12,1.75,true,1);
   } else if(kind==="church"){
     roomShell(R,[152,148,138],[116,110,98],[156,152,142],1.3);
     /* Pews. The back of a bench goes behind the person sitting on it: this
@@ -7446,6 +7482,8 @@ function buildGeo(){
   GLDIRTY=true;
   paveReset();
   GEO=[];
+  G.flagDefs=[];   /* rebuilt here; the flags themselves are drawn per
+                       frame in glDynamic() so they wave */
   /* props are rebuilt with the geometry they belong to. Cleared here rather
      than further down, where the market stalls had already registered and
      were being wiped a moment later. */
@@ -8028,17 +8066,17 @@ function buildGeo(){
        within a few shades of the same red, so a den you had just built
        and the inn across the square read as the same flag from any
        distance */
-    if(mine)flagG(b.x-b.w*0.32,b.z+b.d*0.32,b.h+2.6,1,PLAYER_COL);
+    if(mine)G.flagDefs.push([b.x-b.w*0.32,b.z+b.d*0.32,b.h+2.6,1,PLAYER_COL]);
     /* a rival house flies its own dynasty colour on everything it holds */
     else if(b.ownerRival!=null&&G.rivals&&G.rivals[b.ownerRival])
-      flagG(b.x-b.w*0.30,b.z+b.d*0.34,b.h+1.9,0,G.rivals[b.ownerRival].col||RIVAL_COLS[b.ownerRival%4]);
+      G.flagDefs.push([b.x-b.w*0.30,b.z+b.d*0.34,b.h+1.9,0,G.rivals[b.ownerRival].col||RIVAL_COLS[b.ownerRival%4]]);
     /* somebody else's house or business flies THEIR colour — the same
        colour as the coat the owner is wearing in the street */
-    else if(b.ownerCol)flagG(b.x-b.w*0.30,b.z+b.d*0.34,b.h+1.9,0,b.ownerCol);
+    else if(b.ownerCol)G.flagDefs.push([b.x-b.w*0.30,b.z+b.d*0.34,b.h+1.9,0,b.ownerCol]);
     /* the tavern flies a great one, so you can find it from anywhere in the
        town without hunting for the door -- striped, and the only flag in
        Gild that is, so it is never mistaken for a dynasty's */
-    if(b.kind==="tavern")flagG(b.x-b.w*0.30,b.z+b.d*0.42,b.h+3.4,1,[196,44,36],[230,206,140]);
+    if(b.kind==="tavern")G.flagDefs.push([b.x-b.w*0.30,b.z+b.d*0.42,b.h+3.4,1,[196,44,36],[230,206,140]]);
     CURY=0;
   }
 
@@ -8208,9 +8246,17 @@ var glStatic={o:null,b:null},glDyn={o:null,b:null,k:null};
 var INK=true, INK_COL=[20,16,14];
 function inkHull(op,out){
   var ex=CB.p[0],ey=CB.p[1],ez=CB.p[2];
+  /* Model (.glb) faces were skipped outright, and the models are exactly
+     the nearest ten people on screen -- so the one toggle that is supposed
+     to outline the figures you are actually looking at did nothing you
+     could see. They get the same inverted-hull rim as everything else now;
+     a dense mesh is what that technique is for. Capped, because a model is
+     thousands of triangles and the procedural figures are dozens. */
+  var glbBudget=2600;
   for(var i=0;i<op.length;i++){
     var f=op[i], n=f.n, p=f.p;
-    if(!n||!p||n.length!==p.length*3||f.m>1.5||f.glb)continue;
+    if(!n||!p||n.length!==p.length*3||f.m>1.5)continue;
+    if(f.glb&&glbBudget<=0)continue;
     var cx=0,cy=0,cz=0,k,big=0;
     for(k=0;k<p.length;k++){
       cx+=p[k][0];cy+=p[k][1];cz+=p[k][2];
@@ -8219,7 +8265,9 @@ function inkHull(op,out){
     }
     /* a nose, a thumb, a beard: a rim wider than the thing itself is a
        blot on the face, not an edge. Small parts go without. */
-    if(big<0.055/(FIGFINE||1))continue;
+    /* a model's triangles are far finer than a built figure's, so the same
+       floor would throw the whole model away; it gets its own */
+    if(big<(f.glb?0.022:0.055/(FIGFINE||1)))continue;
     cx/=p.length;cy/=p.length;cz/=p.length;
     var vx=ex-cx,vy=ey-cy,vz=ez-cz, d=Math.hypot(vx,vy,vz);
     if(d>24)continue;
@@ -8232,6 +8280,7 @@ function inkHull(op,out){
     var q=new Array(p.length);
     for(k=0;k<p.length;k++)q[k]=[p[k][0]+n[k*3]*w,p[k][1]+n[k*3+1]*w,p[k][2]+n[k*3+2]*w];
     out.push({p:q,c:INK_COL,m:4,tile:-1,n:n,hull:1});
+    if(f.glb)glbBudget--;
   }
 }
 var glVP=new Float32Array(16),glInvVP=new Float32Array(16),glEye=[0,0,0];
@@ -8341,7 +8390,7 @@ var FSRC=
 " if(hasTex>0.5){"+
 "   vec3 T=normalize(abs(N.y)<0.9?vec3(-N.z,0.0,N.x):vec3(1.0,0.0,0.0));"+
 "   vec3 Bt=cross(N,T);"+
-"   float bumpAmt=mix(9.0,3.5,step(0.75,abs(vN.y)));"+
+"   float bumpAmt=mix(13.0,5.0,step(0.75,abs(vN.y)));"+
 "   N=normalize(N-(T*texGx+Bt*texGy)*bumpAmt);"+
 " }"+
 " vec3 V=normalize(uEye-vW);"+
@@ -10588,6 +10637,15 @@ function glbPlace(op,ch,posed,x,z,gy,hx,hz){
   for(var k=0,ti=0;k+2<idx.length;k+=3,ti++){
     var a=idx[k],b=idx[k+1],c=idx[k+2];
     var isFace=false;
+    /* Every triangle of the skull that ISN'T the painted face fell through
+       to the body's tile -- cloth grain, usually -- so the head was sampling
+       a different material from the face on the front of it and from the
+       neck below it. Two grain changes meeting at the jaw is exactly what
+       reads as a head sitting on a body rather than growing out of it (the
+       same cause the procedural figure's detached head turned out to have).
+       The whole skull takes the skin grain now, so the only thing that
+       changes at the jaw is the paint. */
+    var headTri=!!(hu&&hu.on[a]&&hu.on[b]&&hu.on[c]);
     if(GLB_FACE_PAINT&&hu&&hu.on[a]&&hu.on[b]&&hu.on[c]){
       /* A projector throws the image onto everything in its path, so the
          back of the skull would get a mirrored face. Only triangles whose
@@ -10630,7 +10688,7 @@ function glbPlace(op,ch,posed,x,z,gy,hx,hz){
       vc:vcl?[vcl[a*3],vcl[a*3+1],vcl[a*3+2],
               vcl[b*3],vcl[b*3+1],vcl[b*3+2],
               vcl[c*3],vcl[c*3+1],vcl[c*3+2]]:null,
-      m:1, tile:(tt?tt[ti]:TILE.CLOTH), ao:1, glb:1});
+      m:1, tile:(headTri?TILE.SKIN:(tt?tt[ti]:TILE.CLOTH)), ao:1, glb:1});
   }
 }
 function glbDrawFigure(op,which,x,z,gy,hx,hz,walkT,gaitAmp,weapon,uid,kid,helm){
@@ -11795,7 +11853,14 @@ function glbPickEligible(){
   var cand=[];
   if(G.npcs)for(var i=0;i<G.npcs.length;i++){
     var m=G.npcs[i];
-    if(ailmentOf(m)||(m.pose||0)>=10)continue;
+    /* the loaded models never learned to sit or crouch -- glbDrawFigure
+       isn't even given a pose to work with, so a model figure sent to a
+       bench or a dice game stood there anyway, upright at seat height,
+       which is what read as "standing on the furniture". Work poses were
+       already excluded for the same reason; sit (1) and crouch (2) get
+       the same treatment so those walkers fall back to the procedural
+       figure, which does know how to sit. */
+    if(ailmentOf(m)||(m.pose||0)>=10||(m.pose||0)===1||(m.pose||0)===2)continue;
     var d=Math.hypot(m.x-G.px,m.z-G.pz); if(d<18)cand.push([d,m]);
   }
   if(G.guards)for(var i=0;i<G.guards.length;i++){
@@ -12012,6 +12077,20 @@ function glDynamic(){
         }
       }
     }
+  }
+  /* ownership and tavern flags — drawn per frame, through the same
+     flagG() the static pass used to call once, so they wave like
+     everything else that flies cloth. GEOTARGET redirects the faceC/
+     boxG calls inside flagG into this frame's op instead of the static
+     GEO array. */
+  if(G.flagDefs&&G.flagDefs.length){
+    GEOTARGET=op;
+    for(var fdi=0;fdi<G.flagDefs.length;fdi++){
+      var fd=G.flagDefs[fdi];
+      if(Math.hypot(fd[0]-G.px,fd[1]-G.pz)>70)continue;   /* too far to see */
+      flagG(fd[0],fd[1],fd[2],fd[3],fd[4],fd[5]);
+    }
+    GEOTARGET=null;
   }
   if(G.corpses&&G.corpses.length){
     var now=G.day*DAYH+G.t;
@@ -16288,8 +16367,18 @@ function outlawed(){ return !!(G.record&&G.record.warrant); }
 function fillCells(){
   var R=ROOMS.gaol, W=R.w, D=R.d;
   var n=clamp(1+Math.round(G.heat/26)+rnd(0,1),1,6);
-  var spots=[[-4.2,-D/2+2.0,1],[-1.6,-D/2+1.3,2],[1.8,-D/2+1.6,1],
-             [4.0,-D/2+2.4,2],[-3.0,-D/2+3.6,0],[2.6,-D/2+3.8,0]];
+  /* Built from the same numbers the room itself is built from (NCELL, divW,
+     CELLD) rather than measured off the old room by eye — otherwise a
+     resize here leaves the room fine and the prisoners standing in the
+     wall of whatever size it used to be. Two spots per cell: one back by
+     the chain, one by the bars. */
+  var CELLD=2.3, NCELL=3, divW=0.34, span=W-1.0, cw=(span-divW*(NCELL-1))/NCELL, x0=-span/2;
+  var spots=[];
+  for(var ci=0;ci<NCELL;ci++){
+    var cx=x0+ci*(cw+divW)+cw/2;
+    spots.push([cx-cw*0.18,-D/2+CELLD*0.34,0]);     /* back, by the chain */
+    spots.push([cx+cw*0.14,-D/2+CELLD*0.72,ci%2?1:2]);   /* toward the bars */
+  }
   G.penned=[];
   for(var i=0;i<n;i++){
     var sp=spots[i];
@@ -16590,7 +16679,18 @@ function trialReminders(){
 }
 /* leaving the room the bench is sitting in */
 function walkOutOfCourt(){
-  if(G.scene!=="court")return leaveRoom();
+  if(G.scene!=="court")
+  {
+    /* the same button that says "Step outside" everywhere else used to say
+       it in the cells too, and did exactly that -- one press, no warning,
+       and the whole sentence was served in silence because leaveRoom()
+       still calls servedGaol() underneath. It reads as a free walk when it
+       is actually the full term, taken instantly. Route it through the
+       same deliberate "sit it out" the panel button uses instead, so the
+       one always-visible way out of a cell is honest about what it does. */
+    if(G.scene==="gaol"&&G.gaolDays>0)return serveTime();
+    return leaveRoom();
+  }
   if(!G.trial)return leaveRoom();
   ask("Walk out?",
     "The magistrate, the clerk and the city's advocate are in their places and the "+
@@ -16756,8 +16856,12 @@ function drawHere(){
       rh+='<p class="fine">The workshop runs without you, badly. Your vigour goes with the days.</p>';
       rh+='<button class="btn gold" onclick="serveTime()">Sit it out &middot; '+G.gaolDays+' day'+(G.gaolDays===1?'':'s')+'</button>';
     }
-    rh+='<button class="btn sm" onclick="leaveRoom()">'+
-        ((RK==="gaol"&&G.gaolDays>0)?'Look around first':'Step outside')+'</button>';
+    /* the cell already offers "Sit it out" above (and the persistent button
+       does the same) when time is owed -- a second, different-looking exit
+       here was just a second way to trigger the same thing, worded as if
+       it were something else */
+    if(!(RK==="gaol"&&G.gaolDays>0))
+      rh+='<button class="btn sm" onclick="leaveRoom()">Step outside</button>';
     el.innerHTML=rh;return;
   }
   if(G.scene==="court"){
@@ -16816,7 +16920,7 @@ function drawHere(){
              'onclick="killNPC(selectedNpc())">Draw steel on them</button>';
       }
     }
-    sh2+='<p class="fine" style="margin-top:8px"><a href="#" onclick="clearSel();return false;">Nobody</a></p>';
+    sh2+='<button class="btn sm" style="margin-top:8px" onclick="clearSel()">Nobody</button>';
     el.innerHTML=sh2;return;
   }
   if(!here){
@@ -17369,7 +17473,11 @@ function layout(){
      double-tap has to be aimed at a specific spot most people would not
      guess is there */
   var soB=$("stepOutBtn");
-  if(soB)soB.style.display=(G&&!G.over&&inRoom())?"":"none";
+  if(soB){
+    soB.style.display=(G&&!G.over&&inRoom())?"":"none";
+    soB.textContent=(G&&G.scene==="gaol"&&G.gaolDays>0)?
+      ("Sit it out \u00b7 "+G.gaolDays+" day"+(G.gaolDays===1?"":"s")):"Step outside";
+  }
   drawHere(); drawCheats();
 }
 
@@ -17442,6 +17550,37 @@ function groundAt(sx,sy){
     prevT=t;prevD=d;
   }
   return null;
+}
+/* Does the tap ray actually pass through this building's box? The tap tests
+   used the distance from the tap to the building's projected CENTRE, which
+   is not where you tap a building -- you tap its wall. On anything large
+   the wall is far enough from the centre to lose every comparison, so a
+   townsman walking along that wall took the tap instead. This is the real
+   question those tests were trying to approximate. */
+function tapHitsBuilding(sx,sy,b){
+  if(!b||!b.w||!b.d)return false;
+  var a=unproj(sx,sy,-1),c=unproj(sx,sy,1);
+  if(!a||!c)return false;
+  var dx=c[0]-a[0],dy=c[1]-a[1],dz=c[2]-a[2];
+  var base=(typeof groundH==="function")?groundH(b.x,b.z):0;
+  var y0=base-0.5, y1=base+(b.h||2)+0.4;
+  var x0=b.x-b.w/2, x1=b.x+b.w/2, z0=b.z-b.d/2, z1=b.z+b.d/2;
+  var tmin=0,tmax=1,i,lo,hi,t1,t2;
+  var O=[a[0],a[1],a[2]],Dv=[dx,dy,dz],L=[x0,y0,z0],Hh=[x1,y1,z1];
+  for(i=0;i<3;i++){
+    if(Math.abs(Dv[i])<1e-9){ if(O[i]<L[i]||O[i]>Hh[i])return false; continue; }
+    t1=(L[i]-O[i])/Dv[i]; t2=(Hh[i]-O[i])/Dv[i];
+    lo=Math.min(t1,t2); hi=Math.max(t1,t2);
+    if(lo>tmin)tmin=lo; if(hi<tmax)tmax=hi;
+    if(tmin>tmax)return false;
+  }
+  return true;
+}
+/* how far along the ray the building sits, so the nearest one wins when
+   the tap line passes through two */
+function tapBuildingDepth(sx,sy,b){
+  var s=projectPoint([b.x,(b.h||2)*0.6,b.z]);
+  return s?Math.hypot(b.x-G.px,b.z-G.pz):1e9;
 }
 function bindCanvas(){
   tcv=$("tc");if(!tcv||tcv._b||!tcv.getContext)return;tcv._b=1;
@@ -17575,17 +17714,26 @@ function bindCanvas(){
            won -- and townsfolk walk right along a wall face, which is
            exactly where a tap meant for the building kept landing on them
            instead, and one further tap there could offer to kill them.
-           A fair nearest-wins comparison replaces that blanket exception. */
-        var onB=null,onBd=1e9;
+           The replacement compared against the building's projected CENTRE,
+           which on a hall is nowhere near the wall you tapped, so the
+           walker at the wall still won. It asks the real question now: did
+           the tap ray go through the building's box at all? If it did, the
+           building takes it unless the walker is genuinely close to the
+           tap AND standing clear of that building's footprint. */
+        var hitB=null,hitBd=1e9;
         for(var bi2=0;bi2<B.length;bi2++){
-          var bb=B[bi2],bs=projectPoint([bb.x,(bb.h||2)*0.6,bb.z]);
-          if(!bs)continue;
-          var bdd=Math.hypot(bs[0]-TX,bs[1]-TY);
-          var be2=projectPoint([bb.x+(bb.w||2)/2,(bb.h||2)*0.6,bb.z]);
-          var bhit2=be2?Math.max(14,Math.min(46,Math.hypot(be2[0]-bs[0],be2[1]-bs[1])*0.9)):22;
-          if(bdd<onBd&&bdd<bhit2){onBd=bdd;onB=bb;}
+          var bb=B[bi2];
+          if(!tapHitsBuilding(TX,TY,bb))continue;
+          var bdep=tapBuildingDepth(TX,TY,bb);
+          if(bdep<hitBd){hitBd=bdep;hitB=bb;}
         }
-        if(onB&&onBd<bnd)bestN=null;    /* the building was actually closer to the tap */
+        if(hitB){
+          /* somebody standing inside/against the footprint the tap hit is
+             not a separate target from it -- a tap there means the wall */
+          var insideFp=(Math.abs(bestN.x-hitB.x)<=hitB.w/2+0.55&&
+                        Math.abs(bestN.z-hitB.z)<=hitB.d/2+0.55);
+          if(insideFp||bnd>10)bestN=null;
+        }
       }
       if(bestN){
         var wd=Math.hypot(G.px-bestN.x,G.pz-bestN.z);
@@ -17625,18 +17773,16 @@ function bindCanvas(){
           goTo(bestN.x,bestN.z); G.run=true;   /* after somebody: run */
         }
       }else{
-      /* a building next, if the tap is near one */
+      /* a building next, if the tap ray actually goes through one. This was
+         also centre-distance with a capped pixel radius, which both missed
+         the walls of big buildings and let a small one far from the tap
+         claim it. */
       var best=null,bd=1e9,bhit=0;
       for(var i=0;i<B.length;i++){
-        var b=B[i],s=projectPoint([b.x,(b.h||2)*0.6,b.z]);
-        if(!s)continue;
-        var d=Math.hypot(s[0]-TX,s[1]-TY);
-        /* hit radius follows the building's actual on-screen footprint rather
-           than a flat pixel count — otherwise a big hall beside a road swallows
-           every tap meant for the road */
-        var e2=projectPoint([b.x+(b.w||2)/2,(b.h||2)*0.6,b.z]);
-        var hit=e2?Math.max(14,Math.min(46,Math.hypot(e2[0]-s[0],e2[1]-s[1])*0.9)):22;
-        if(d<bd&&d<hit){bd=d;best=b;bhit=hit;}
+        var b=B[i];
+        if(!tapHitsBuilding(TX,TY,b))continue;
+        var dep=tapBuildingDepth(TX,TY,b);
+        if(dep<bd){bd=dep;best=b;}
       }
       if(best){
         /* a second tap on the same building within half a second walks you
