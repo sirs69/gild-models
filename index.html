@@ -216,7 +216,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.007</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.010</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -8246,17 +8246,20 @@ var glStatic={o:null,b:null},glDyn={o:null,b:null,k:null};
 var INK=true, INK_COL=[20,16,14];
 function inkHull(op,out){
   var ex=CB.p[0],ey=CB.p[1],ez=CB.p[2];
-  /* Model (.glb) faces were skipped outright, and the models are exactly
-     the nearest ten people on screen -- so the one toggle that is supposed
-     to outline the figures you are actually looking at did nothing you
-     could see. They get the same inverted-hull rim as everything else now;
-     a dense mesh is what that technique is for. Capped, because a model is
-     thousands of triangles and the procedural figures are dozens. */
-  var glbBudget=2600;
+  /* Model (.glb) faces are NOT inked, and this is measured, not assumed.
+     Inking them was tried (v7.005) so the toggle would visibly affect the
+     nearest ten people. On gild_man/2/3 the rim landed on 48% of the
+     body's triangles and under 1% of the head's -- the subdivided skull
+     is four times finer than the body and falls under any size floor,
+     and sweeping the floor (0.022/0.055/0.09) gives body 48%/9%/0.7%
+     against head 0.8%/0%/0% every time. A body wearing a dark rim shell
+     under a bare pale head reads as a head that doesn't belong to it,
+     which is what the "detached head" looked like once the tile mistake
+     was reverted. The inverted-hull rim suits the coarse procedural
+     figures it was written for; it does not suit a dense mesh. */
   for(var i=0;i<op.length;i++){
     var f=op[i], n=f.n, p=f.p;
-    if(!n||!p||n.length!==p.length*3||f.m>1.5)continue;
-    if(f.glb&&glbBudget<=0)continue;
+    if(!n||!p||n.length!==p.length*3||f.m>1.5||f.glb)continue;
     var cx=0,cy=0,cz=0,k,big=0;
     for(k=0;k<p.length;k++){
       cx+=p[k][0];cy+=p[k][1];cz+=p[k][2];
@@ -8265,9 +8268,7 @@ function inkHull(op,out){
     }
     /* a nose, a thumb, a beard: a rim wider than the thing itself is a
        blot on the face, not an edge. Small parts go without. */
-    /* a model's triangles are far finer than a built figure's, so the same
-       floor would throw the whole model away; it gets its own */
-    if(big<(f.glb?0.022:0.055/(FIGFINE||1)))continue;
+    if(big<0.055/(FIGFINE||1))continue;
     cx/=p.length;cy/=p.length;cz/=p.length;
     var vx=ex-cx,vy=ey-cy,vz=ez-cz, d=Math.hypot(vx,vy,vz);
     if(d>24)continue;
@@ -8280,7 +8281,6 @@ function inkHull(op,out){
     var q=new Array(p.length);
     for(k=0;k<p.length;k++)q[k]=[p[k][0]+n[k*3]*w,p[k][1]+n[k*3+1]*w,p[k][2]+n[k*3+2]*w];
     out.push({p:q,c:INK_COL,m:4,tile:-1,n:n,hull:1});
-    if(f.glb)glbBudget--;
   }
 }
 var glVP=new Float32Array(16),glInvVP=new Float32Array(16),glEye=[0,0,0];
@@ -10728,14 +10728,21 @@ function glbPlace(op,ch,posed,x,z,gy,hx,hz,uid){
          rx*N[c*3]+hx*N[c*3+2],N[c*3+1],rz*N[c*3]+hz*N[c*3+2]],
       c:(headTri?[tc[ti*3],tc[ti*3+1],tc[ti*3+2]]
                 :[clamp(tc[ti*3]*TN[0],0,255),clamp(tc[ti*3+1]*TN[1],0,255),clamp(tc[ti*3+2]*TN[2],0,255)]),
-      /* the three corner colours, and the skin/cloth grain the
-         procedural figures have always had and the models opted out of.
-         The dye goes on the cloth only -- the skull keeps its own colour,
-         or the tint would give people green faces. */
+      /* the per-person dye goes on the body only -- the skull and whatever
+         sits on it keep their own colour, or the tint gives green faces.
+         The TILE, though, is the model's own and is already right:
+         measured on gild_man/2/3, head triangles are ~1640-1888 skin plus
+         104-192 cloth, and that cloth is the hair, hood and collar. An
+         earlier attempt to force the whole skull to skin (on the theory
+         that a tile change at the jaw was the detached head) repainted all
+         of that as bare scalp, which is what turned the heads into pale
+         bald blobs. The measured seam is fine either way -- worst stretch
+         1.10-1.30 across both clips on all three models, before and after
+         subdivision -- so the tile was never the cause. */
       vc:vcl?[vcl[a*3],vcl[a*3+1],vcl[a*3+2],
               vcl[b*3],vcl[b*3+1],vcl[b*3+2],
               vcl[c*3],vcl[c*3+1],vcl[c*3+2]]:null,
-      m:1, tile:(headTri?TILE.SKIN:(tt?tt[ti]:TILE.CLOTH)), ao:1, glb:1});
+      m:1, tile:(tt?tt[ti]:TILE.CLOTH), ao:1, glb:1});
   }
 }
 function glbDrawFigure(op,which,x,z,gy,hx,hz,walkT,gaitAmp,weapon,uid,kid,helm){
@@ -16771,7 +16778,9 @@ function trialReminders(){
   if(G.day!==T.dayDue)return;
   var where=(T.town===1?"the Assize House in Veldkirk":"the courthouse in Gild");
   if(!T.__morn&&G.t>=6.0){T.__morn=1;
+    var CC=CHARGES[T.charge];
     say("Today","Your hearing is today, at "+hourStr(T.hourDue)+", at "+where+".\n\n"+
+        (CC?"The charge is "+CC.n.toLowerCase()+", brought by "+T.accuser+".\n\n":"")+
         "Be at the door by then. The bench does not wait, and it does not forgive.");}
   if(!T.__hour&&G.t>=T.hourDue-1){T.__hour=1;note("An hour until your hearing at "+where);}
   if(!T.__sit&&G.t>=T.hourDue){T.__sit=1;note("The bench is sitting. Go up.");layout();}
