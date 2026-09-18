@@ -205,7 +205,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <button id="aplus" aria-label="Larger text">A+</button>
     <span class="lbl" id="asz">125%</span>
     <button id="hcb">High contrast</button>
-    <button id="inkb">Ink off</button>
+    <button id="inkb">Ink: on</button>
     <button id="cheat" style="display:none">Test</button>
     <button onclick="toggleTrace()">Trace</button>
   </div>
@@ -216,7 +216,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.005</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.007</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -10055,10 +10055,33 @@ function glbSubdivideHead(ch,levels){
       }
       var L=Math.hypot(nrm[m*3],nrm[m*3+1],nrm[m*3+2]);
       if(L>1e-9){nrm[m*3]/=L;nrm[m*3+1]/=L;nrm[m*3+2]/=L;}
-      /* the heavier corner lends its bones, so a new vertex never picks up
-         a joint neither parent had */
-      var src=(headW(a)>=headW(b))?a:b;
-      for(var q3=0;q3<4;q3++){ j4[m*4+q3]=j4[src*4+q3]; w4[m*4+q3]=w4[src*4+q3]; }
+      /* A midpoint used to copy ONE parent's bones wholesale -- whichever
+         had more head weight. On the ring of edges at the neck seam, that
+         parent is the head vertex, so every new midpoint down there became
+         100% head-weighted even though it sits halfway down the neck. The
+         whole seam ring then travelled with the head bone while the neck
+         vertices below stayed put, and the mesh tore open at the jaw: a
+         head that follows the head bone with a gap under it. That is the
+         detached head, and it only appears on models because only models
+         get subdivided. Blend both parents' bones at half each instead --
+         combine duplicate joints, keep the four heaviest, renormalise --
+         so a seam midpoint ends up half head, half neck and the surface
+         stays continuous through the joint. */
+      var acc={};
+      for(var pi=0;pi<2;pi++){
+        var pv=pi?b:a;
+        for(var q3=0;q3<4;q3++){
+          var wj=w4[pv*4+q3]; if(!(wj>0))continue;
+          var jj=j4[pv*4+q3];
+          acc[jj]=(acc[jj]||0)+wj*0.5;
+        }
+      }
+      var keys=Object.keys(acc).sort(function(p,q){return acc[q]-acc[p];}).slice(0,4);
+      var tot=0; for(var ki=0;ki<keys.length;ki++)tot+=acc[keys[ki]];
+      for(var q4=0;q4<4;q4++){
+        if(q4<keys.length&&tot>1e-9){ j4[m*4+q4]=+keys[q4]; w4[m*4+q4]=acc[keys[q4]]/tot; }
+        else { j4[m*4+q4]=(keys.length?+keys[0]:j4[a*4]); w4[m*4+q4]=0; }
+      }
       if(vcol)for(q2=0;q2<3;q2++)vcol[m*3+q2]=Math.round((vcol[a*3+q2]+vcol[b*3+q2])*0.5);
       mid[key]=m; return m;
     }
@@ -10626,7 +10649,27 @@ function glbPosed(which,ch,clip,t,kid){
   if(kid){ for(var s=0;s<pos.length;s++)pos[s]*=GLB_KID_SCALE; }
   hit={pos:pos,nrm:nrm,W:W}; GLB_POSE_CACHE[key]=hit; return hit;
 }
-function glbPlace(op,ch,posed,x,z,gy,hx,hz){
+/* A per-person tint for the cloth on a loaded model. Two or three .glb
+   walkers between every townsman in the city means everybody is wearing
+   the same tunic in the same colour, which is the "they all look identical"
+   problem. The mesh can't be varied cheaply, but its dyes can: a stable
+   hue-and-value shift keyed off the person's own uid recolours the cloth
+   without touching skin or the painted face, so the same model reads as a
+   different person each time it appears. Deterministic, so it never
+   flickers between frames. */
+function glbTint(uid){
+  var s=(((uid||1)*2654435761)>>>0);
+  var hueA=((s>>>3)%1000)/1000*Math.PI*2;
+  var amp=0.10+((s>>>13)%1000)/1000*0.14;      /* how strongly dyed -- kept
+                                                   modest, so the palette
+                                                   stays madder/woad/weld
+                                                   rather than mint green */
+  var val=0.84+((s>>>23)%1000)/1000*0.34;      /* light or dark cloth */
+  return [ (1+Math.cos(hueA)*amp)*val,
+           (1+Math.cos(hueA-2.094)*amp)*val,
+           (1+Math.cos(hueA+2.094)*amp)*val ];
+}
+function glbPlace(op,ch,posed,x,z,gy,hx,hz,uid){
   var hl=Math.hypot(hx,hz)||1; hx/=hl; hz/=hl;
   var rx=hz, rz=-hx;
   var prim=ch.meshes[0][0], P=posed.pos, N=posed.nrm, idx=prim.indices, tc=prim.triColor;
@@ -10634,6 +10677,7 @@ function glbPlace(op,ch,posed,x,z,gy,hx,hz){
   /* the head gets the painted face; everything else keeps the grain */
   var hu=glbHeadUVs(ch);
   var faceCell=(ch._female?TILE.FACE_F:TILE.FACE_M);
+  var TN=glbTint(uid);
   for(var k=0,ti=0;k+2<idx.length;k+=3,ti++){
     var a=idx[k],b=idx[k+1],c=idx[k+2];
     var isFace=false;
@@ -10682,9 +10726,12 @@ function glbPlace(op,ch,posed,x,z,gy,hx,hz){
       n:[rx*N[a*3]+hx*N[a*3+2],N[a*3+1],rz*N[a*3]+hz*N[a*3+2],
          rx*N[b*3]+hx*N[b*3+2],N[b*3+1],rz*N[b*3]+hz*N[b*3+2],
          rx*N[c*3]+hx*N[c*3+2],N[c*3+1],rz*N[c*3]+hz*N[c*3+2]],
-      c:[tc[ti*3],tc[ti*3+1],tc[ti*3+2]],
+      c:(headTri?[tc[ti*3],tc[ti*3+1],tc[ti*3+2]]
+                :[clamp(tc[ti*3]*TN[0],0,255),clamp(tc[ti*3+1]*TN[1],0,255),clamp(tc[ti*3+2]*TN[2],0,255)]),
       /* the three corner colours, and the skin/cloth grain the
-         procedural figures have always had and the models opted out of */
+         procedural figures have always had and the models opted out of.
+         The dye goes on the cloth only -- the skull keeps its own colour,
+         or the tint would give people green faces. */
       vc:vcl?[vcl[a*3],vcl[a*3+1],vcl[a*3+2],
               vcl[b*3],vcl[b*3+1],vcl[b*3+2],
               vcl[c*3],vcl[c*3+1],vcl[c*3+2]]:null,
@@ -10699,7 +10746,7 @@ function glbDrawFigure(op,which,x,z,gy,hx,hz,walkT,gaitAmp,weapon,uid,kid,helm){
   var len=glbClipLen(ch,clip)||1;
   var t=walking?(((walkT||0)*0.55)%len):((((WORLDT||0)*0.6)+((uid||0)*0.37))%len);
   var posed=glbPosed(which,ch,clip,t,kid);
-  glbPlace(op,ch,posed,x,z,gy,hx,hz);
+  glbPlace(op,ch,posed,x,z,gy,hx,hz,uid);
   /* a child carries nothing, and the grip offsets are adult-sized anyway */
   if(!kid&&weapon&&GLB_IMPORTED[weapon])glbAttachProp(op,ch,posed.W,weapon,"hand_r",x,z,gy,hx,hz,1.0);
   if(!kid&&helm&&GLB_IMPORTED[helm])glbAttachProp(op,ch,posed.W,helm,"Head",x,z,gy,hx,hz,1.0);
@@ -11849,6 +11896,23 @@ function boxG2(out,cx,cz,w,d,y0,y1,col){
   out.push({p:[[x1,y0,z0],[x1,y0,z1],[x1,y1,z1],[x1,y1,z0]],c:sh(col,0.80)});
   out.push({p:[[x0,y0,z1],[x0,y0,z0],[x0,y1,z0],[x0,y1,z1]],c:sh(col,0.80)});
 }
+/* boxG2 rotated about Y: the cart was built by offsetting each part along
+   the vehicle's heading with boxG2, but boxG2 builds a WORLD-axis-aligned
+   box, so the parts were placed along the cart and then each drawn square
+   to the world. At any heading but due north the bed, sideboards, shafts
+   and axle all splayed apart into loose planks at crossed angles, which is
+   what the cart has been looking like. fwd/lat are the vehicle's unit
+   forward and lateral vectors; ol is along the cart, ow across it. */
+function boxR2(out,cx,cz,fwdx,fwdz,latx,latz,ow,ol,y0,y1,col){
+  var hw=ow/2, hl=ol/2;
+  function c4(sw,sl){return [cx+latx*hw*sw+fwdx*hl*sl, cz+latz*hw*sw+fwdz*hl*sl];}
+  var A=c4(-1,-1),Bc=c4(1,-1),C=c4(1,1),D=c4(-1,1);
+  out.push({p:[[A[0],y1,A[1]],[Bc[0],y1,Bc[1]],[C[0],y1,C[1]],[D[0],y1,D[1]]],c:sh(col,1.0)});
+  out.push({p:[[A[0],y0,A[1]],[Bc[0],y0,Bc[1]],[Bc[0],y1,Bc[1]],[A[0],y1,A[1]]],c:sh(col,0.86)});
+  out.push({p:[[C[0],y0,C[1]],[D[0],y0,D[1]],[D[0],y1,D[1]],[C[0],y1,C[1]]],c:sh(col,0.72)});
+  out.push({p:[[Bc[0],y0,Bc[1]],[C[0],y0,C[1]],[C[0],y1,C[1]],[Bc[0],y1,Bc[1]]],c:sh(col,0.80)});
+  out.push({p:[[D[0],y0,D[1]],[A[0],y0,A[1]],[A[0],y1,A[1]],[D[0],y1,D[1]]],c:sh(col,0.80)});
+}
 function glbPickEligible(){
   var cand=[];
   if(G.npcs)for(var i=0;i<G.npcs.length;i++){
@@ -12276,7 +12340,9 @@ function glDynamic(){
         cy=Math.max(cy,groundH(qx,qz));
       }
       function part(ox,oz,w2,d2,y0,y1,col){
-        boxG2(op,ccx+fwdx*oz+latx*ox, ccz+fwdz*oz+latz*ox, w2,d2, y0+cy, y1+cy, col);
+        /* w2 is across the cart, d2 along it, both in the cart's own frame */
+        boxR2(op,ccx+fwdx*oz+latx*ox, ccz+fwdz*oz+latz*ox,
+              fwdx,fwdz,latx,latz, w2,d2, y0+cy, y1+cy, col);
       }
       var wheelR=heavy?0.52:0.42, bedY=wheelR+0.16;
       /* bed, sideboards and tailboard */
@@ -12319,7 +12385,11 @@ function glDynamic(){
         }catch(e){ _drewOx=false; } }
         if(!_drewOx){
         function oxpart(ox2,oz2,w2,d2,y0,y1,col){
-          boxG2(op,oxx+fwdx*oz2+latx*ox2, oxz+fwdz*oz2+latz*ox2, w2,d2, y0+oy, y1+oy, col);
+          /* same rotation bug as the cart: the ox was assembled along the
+             heading out of world-aligned boxes, so it came apart into
+             scattered blocks on any diagonal */
+          boxR2(op,oxx+fwdx*oz2+latx*ox2, oxz+fwdz*oz2+latz*ox2,
+                fwdx,fwdz,latx,latz, w2,d2, y0+oy, y1+oy, col);
         }
         oxpart(0,0,0.92,1.65,0.62,1.28,[92,76,60]);              /* barrel */
         oxpart(0,0.92,0.52,0.42,0.74,1.22,[84,68,54]);           /* head */
@@ -14289,9 +14359,38 @@ function famById(id){
 function famMe(){ return famById(G.me); }
 function famHouse(){ return String(G.house||""); }
 function famFull(first){ var h=famHouse(); return h?first+" "+h:first; }
+/* Nobody in one household is called the same thing as somebody else in it.
+   The heir cheat picked a first name straight out of the pool, so it
+   regularly handed you an heir with your own name, and ordinary births
+   could do it too (and to each other). Any new family member whose first
+   name is already taken by a living relative gets re-rolled here, at the
+   one place they are all created, rather than at each of the seven call
+   sites. If the pool is exhausted the name stands -- a duplicate beats
+   no person at all. */
+function famFirstTaken(first){
+  first=String(first||"").split(" ")[0].toLowerCase();
+  if(!first)return false;
+  for(var i=0;i<(G.fam||[]).length;i++){
+    var q=G.fam[i];
+    if(!q||q.alive===false)continue;
+    if(String(q.name||"").split(" ")[0].toLowerCase()===first)return true;
+  }
+  return false;
+}
+function famFreshName(name,sex){
+  if(!famFirstTaken(name))return name;
+  var pool=(sex?FIRST_F:FIRST_M)||[];
+  var order=pool.slice().sort(function(){return Math.random()-0.5;});
+  for(var i=0;i<order.length;i++)if(!famFirstTaken(order[i]))return famFull(order[i]);
+  return name;
+}
 function famNew(o){
   if(!G.fam){G.fam=[];G.famNext=0;}
-  var p={id:++G.famNext, name:o.name, sex:o.sex?1:0, age:o.age||0,
+  /* Only children get re-rolled. A founder's and a spouse's name is held
+     in G.name / G.spouse as well, so renaming one here would desync the
+     two and show a different name in the panel than in the family tree. */
+  var nm=((o.by||"birth")==="birth")?famFreshName(o.name,o.sex?1:0):o.name;
+  var p={id:++G.famNext, name:nm, sex:o.sex?1:0, age:o.age||0,
          alive:o.alive!==false, died:(o.alive===false)?G.day:null,
          par:o.par||null, mate:o.mate||null, gen:o.gen||1, by:o.by||"birth",
          uid:o.uid||famUid(), skin:(o.skin!==undefined)?o.skin:rnd(0,SKINCOLORS.length-1),
@@ -18176,7 +18275,7 @@ function applyDisp(){
 $("aminus").onclick=function(){if(szi>0){szi--;applyDisp();}};
 $("aplus").onclick=function(){if(szi<SZ.length-1){szi++;applyDisp();}};
 $("hcb").onclick=function(){hc=!hc;applyDisp();};
-$("inkb").onclick=function(){INK=!INK;$("inkb").textContent=INK?"Ink off":"Ink on";};
+$("inkb").onclick=function(){INK=!INK;$("inkb").textContent=INK?"Ink: on":"Ink: off";};
 $("cheat").onclick=function(){$("cheatbox").classList.toggle("on");drawCheats();};
 /* The testing tools are not for the player. Five quick taps on the version
    number on the front screen, or on the crest in the bar, and the Test
