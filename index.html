@@ -205,7 +205,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <button id="aplus" aria-label="Larger text">A+</button>
     <span class="lbl" id="asz">125%</span>
     <button id="hcb">High contrast</button>
-    <button id="inkb">Ink: on</button>
+    <button id="inkb">Ink: off</button>
     <button id="cheat" style="display:none">Test</button>
     <button onclick="toggleTrace()">Trace</button>
   </div>
@@ -216,7 +216,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.011</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.015</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -2082,11 +2082,20 @@ function addSupply(t,g,q){
    it — reading the shelves at closing time always says "empty" and pinned
    every price to the ceiling, which was the first thing this got wrong. */
 function coverOf(t,g){
-  if(G&&G.cover&&G.cover[t]&&G.cover[t][g]!==undefined)return G.cover[t][g];
+  /* guarded at the source as well as at the curve: a bad supply figure
+     stored here would otherwise be read back every day */
+  if(G&&G.cover&&G.cover[t]&&isFinite(G.cover[t][g]))return G.cover[t][g];
   return 1;
 }
 function priceAtCover(t,g,cover){
   var base=(t===1)?veldBase(g):GOODS[g].b;
+  /* A non-finite cover returns a non-finite price, and because the market
+     eases toward the price it wants (M[g]+=(want-M[g])*0.45) a single NaN
+     poisons that good's price for the rest of the game with nothing thrown
+     and nothing logged. Cover is supply divided by demand, so it only takes
+     one bad supply figure to get here. Treat anything not finite as a
+     normally stocked market rather than letting it through. */
+  if(!isFinite(cover))cover=1;
   var f;
   if(cover<1)f=1.0+(1-Math.max(cover,0.15))/0.85*0.85;
   else f=1.0-Math.min(cover-1,2.2)/2.2*0.48;
@@ -3399,7 +3408,13 @@ function fightHoldSecond(g,dt){
   var sl=fightSecondSlot(), dx=sl[0]-g.x, dz=sl[1]-g.z, d=Math.hypot(dx,dz);
   if(d>0.05){
     var amt=Math.min(d,(g.sp||1.1)*1.8*dt);
-    if(!slideTo(g,g.x+dx/d*amt,g.z+dz/d*amt)){g.x+=dx/d*amt;g.z+=dz/d*amt;}
+    /* slideTo returning false means every direction was blocked. Moving him
+       anyway put the second guard through whatever wall stood between him
+       and his slot -- the slot is computed off the player's position with
+       no regard for what is in the way, so in a street fight beside a house
+       it regularly lands inside the house. Let him stay blocked and hold
+       where he is; the slot is a preference, not a right. */
+    slideTo(g,g.x+dx/d*amt,g.z+dz/d*amt);
     g.walkT=(g.walkT||0)+amt; g.gaitAmp=1.35;   /* he runs to his slot */
   } else g.gaitAmp=0.55;
   var fx=G.px-g.x, fz=G.pz-g.z, fl=Math.hypot(fx,fz)||1;
@@ -8243,7 +8258,7 @@ var glStatic={o:null,b:null},glDyn={o:null,b:null,k:null};
    near-black, and the twin is drawn with its front faces culled, so only
    the far side shows — a rim just outside the silhouette. Its width grows
    with distance so it stays about two pixels on the screen. */
-var INK=true, INK_COL=[20,16,14];
+var INK=false, INK_COL=[20,16,14];   /* off by default: the rim was written for the coarse procedural figures, and on a dense model it reads as a dark shell rather than an outline */
 function inkHull(op,out){
   var ex=CB.p[0],ey=CB.p[1],ez=CB.p[2];
   /* Model (.glb) faces are NOT inked, and this is measured, not assumed.
@@ -10487,7 +10502,7 @@ function glbAttachProp(out, character, world, propName, boneName, worldX, worldZ
    the player picked) instead of data baked into the page. A role just
    asks "is a model with this name loaded?" -- if not, that person stays
    procedural, nothing required. */
-var GLB_ROLE_BUDGET=10, GLB_ROLE_N=0, GLB_ELIGIBLE=null;
+var GLB_ROLE_BUDGET=22, GLB_ROLE_N=0, GLB_ELIGIBLE=null;
 /* Every townsman being the same man is worse than no models at all, so
    a role offers several variants and each person keeps one for good --
    chosen from their own uid, so it never flickers between frames and
@@ -10876,7 +10891,12 @@ function glbDrawFigure(op,which,x,z,gy,hx,hz,walkT,gaitAmp,weapon,uid,kid,helm){
   if(!kid&&helm&&GLB_IMPORTED[helm])glbAttachProp(op,ch,posed.W,helm,"Head",x,z,gy,hx,hz,1.0);
   return true;
 }
-var GLB_GUARD_WEAPONS=["gild_sword","gild_claymore","gild_axe","gild_spear","gild_hammer_small"];
+/* The bow loads with the pack and is already handled as a two-handed arm
+   further down, but it was never in this list, so nobody could be issued
+   one and the file sat in memory unused for the whole game. A watch that
+   is all blades is also a watch with no reach; one archer in six gives
+   the gate someone who could actually stop a man at a distance. */
+var GLB_GUARD_WEAPONS=["gild_sword","gild_claymore","gild_axe","gild_spear","gild_hammer_small","gild_bow_wooden"];
 function glbGuardWeapon(uid){
   var have=GLB_GUARD_WEAPONS.filter(function(n){return GLB_IMPORTED[n];});
   return have.length?have[(uid||0)%have.length]:null;
@@ -12049,10 +12069,10 @@ function glbPickEligible(){
        the same treatment so those walkers fall back to the procedural
        figure, which does know how to sit. */
     if(ailmentOf(m)||(m.pose||0)>=10||(m.pose||0)===1||(m.pose||0)===2)continue;
-    var d=Math.hypot(m.x-G.px,m.z-G.pz); if(d<18)cand.push([d,m]);
+    var d=Math.hypot(m.x-G.px,m.z-G.pz); if(d<26)cand.push([d,m]);
   }
   if(G.guards)for(var i=0;i<G.guards.length;i++){
-    var g=G.guards[i], d=Math.hypot(g.x-G.px,g.z-G.pz); if(d<18)cand.push([d,g]);
+    var g=G.guards[i], d=Math.hypot(g.x-G.px,g.z-G.pz); if(d<26)cand.push([d,g]);
   }
   cand.sort(function(a,b){return a[0]-b[0];});
   var s=new Set();
@@ -13468,7 +13488,17 @@ function step(dt){
           g.tx=wp[0]-tdz/tdl*sd; g.tz=wp[1]+tdx/tdl*sd;
         }
       } else if(!g.tx||Math.hypot(g.tx-g.x,g.tz-g.z)<0.5){
-        var b=pickIn(g.town||0);g.tx=b.dx+(Math.random()-.5)*2;g.tz=b.dz+(Math.random()-.5)*2;
+        /* The watch picked a building and took its door point plus up to a
+           metre of jitter, with nothing checking the result was outside the
+           wall -- the same defect the townsfolk's wandering already had
+           fixed. When the jitter landed in stonework the guard leaned on
+           the wall for good, which is the watchman standing in a building.
+           Reuse the walkers' own check: only a spot that is actually clear
+           is accepted as somewhere to walk to. */
+        var gb=pickIn(g.town||0);
+        var gsp=freeSpotNear(gb.dx+(Math.random()-.5)*2,gb.dz+(Math.random()-.5)*2,2.5);
+        if(gsp){ g.tx=gsp[0]; g.tz=gsp[1]; }
+        else { var GT=TOWNS[g.town||0]; g.tx=GT.x; g.tz=GT.z; }
       }
       var ex=g.tx-g.x,ez=g.tz-g.z,ed=Math.hypot(ex,ez);
       if(ed>0.1){
@@ -17251,7 +17281,18 @@ function drawHere(){
       h+='<button class="btn gold" onclick="hire()">Hire a hand &middot; '+fmt(120+G.shop.workers*90)+' &middot; '+G.shop.workers+'/'+_cap+'</button>';
     if(G.shop.workers)h+='<button class="btn sm" onclick="fire()">Let a hand go</button>';
     var _ccap=carterCap(), _cn=G.shop.carters||0;
+    /* How many carters this bench can actually keep busy. A carter is a
+       ceiling on how much gets moved, not a multiplier -- the shop only
+       ever asks for what the bench can eat, so a carter past that number
+       draws a full wage and moves nothing. Nothing on this panel said so,
+       and the button happily sold you a fourth man for a one-hand bench. */
+    var _trN=TRADES[G.trade], _fH=(G.shop.bId==="shop")?famBenchHands():0;
+    var _spN=_trN?_trN.rate*(1+(G.shop.workers+_fH)*0.72)*(G.shop.lvl*0.85+0.25):0;
+    var _useful=Math.max(1,Math.ceil(Math.max(_spN*(RECIPE+1)*1.15,0.15)/CARTER_HAUL));
     h+='<p class="fine" style="margin-top:10px">Carters keep the workshop fed and the stalls stocked. Your hands do not leave the bench.</p>';
+    h+='<p class="fine">This bench can keep <b>'+_useful+'</b> carter'+(_useful===1?'':'s')+
+       ' busy. '+(_cn>_useful?'You are paying '+(_cn-_useful)+' to stand idle — let them go, or take on more hands.':
+                 (_cn<_useful?'More hands on the bench will need more carts.':'That is what you have.'))+'</p>';
     if(_cn>=_ccap)
       h+='<button class="btn sm" disabled style="opacity:.5">Yard full &middot; '+_cn+'/'+_ccap+' carters</button>';
     else
