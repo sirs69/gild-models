@@ -258,7 +258,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.032</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.033</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -4409,7 +4409,58 @@ function goTo(x,z){
    backdrop rather than somewhere you are standing. */
 var PROPS=[];
 var STALLS=[];   /* every market stall drawn, in the order drawn — the sellers key off it */
-function prop(x,z,w,d,tag){PROPS.push({x:x,z:z,w:w,d:d,tag:tag});}
+function prop(x,z,w,d,tag){PROPS.push({x:x,z:z,w:w,d:d,tag:tag}); PROPGRID=null;}
+/* Only the fountain, the stalls and the well were ever solid: trees,
+   lamp posts and carts were drawn and walked straight through, and the
+   fountain's box stopped at its basin while its two steps ran half a
+   metre further out, so people strolled across the steps with their feet
+   in the stone. Street furniture now registers itself, and blockedAt
+   reads props through a coarse grid so a town full of trees costs it no
+   more than the dozen props it used to walk. */
+var PROPGRID=null, PROPCELL=4, PROPMARGIN=1.6, BLOCK_SOFT=false;
+function propSoft(q){ return q.tag==="tree"||q.tag==="lamp"||q.tag==="cart"; }
+/* the first prop standing across a straight walk, if any */
+function propOnLine(x0,z0,x1,z1){
+  var L=Math.hypot(x1-x0,z1-z0), n=Math.max(1,Math.ceil(L/0.3)), g=propGrid();
+  for(var i=1;i<=n;i++){ var t=i/n, x=x0+(x1-x0)*t, z=z0+(z1-z0)*t;
+    var b=g.m.get(Math.floor(x/PROPCELL)*100003+Math.floor(z/PROPCELL)); if(!b)continue;
+    for(var j=0;j<b.length;j++){ var q=b[j]; if(BLOCK_IGNORE&&q.tag===BLOCK_IGNORE)continue; if(BLOCK_SOFT&&propSoft(q))continue;
+      if(Math.abs(x-q.x)<q.w/2+0.48&&Math.abs(z-q.z)<q.d/2+0.48)return q; } }
+  return null;
+}
+/* the way round it: the clear corner that makes the shorter walk */
+function propCorner(q,x0,z0,x1,z1){
+  var best=null, bd=1e9, ox=q.w/2+0.95, oz=q.d/2+0.95;
+  for(var sx=-1;sx<=1;sx+=2)for(var sz=-1;sz<=1;sz+=2){
+    var cx=q.x+sx*ox, cz=q.z+sz*oz;
+    if(blockedAt(cx,cz))continue;
+    if(Math.hypot(cx-x0,cz-z0)<0.8)continue;          /* not the corner he is already standing on */
+    var d=Math.hypot(cx-x0,cz-z0)+Math.hypot(x1-cx,z1-cz);
+    if(propOnLine(x0,z0,cx,cz)===q)d+=50;
+    if(propOnLine(cx,cz,x1,z1)===q)d+=25;               /* rather a corner that sees past it */
+    if(d<bd){bd=d;best=[cx,cz];}
+  }
+  return best;
+}
+function propGrid(){
+  if(PROPGRID&&PROPGRID.n===PROPS.length)return PROPGRID;
+  /* street furniture never stands in a doorway or in a stallholder's way
+     to his counter: a tree or a cart that the town builder happened to
+     put there is left drawn but not solid */
+  for(var fi=PROPS.length-1;fi>=0;fi--){ var fq=PROPS[fi];
+    if(fq.tag!=="tree"&&fq.tag!=="lamp"&&fq.tag!=="cart")continue;
+    var clash=false;
+    for(var si=0;si<STALLS.length&&!clash;si++)if(Math.hypot(STALLS[si].x-fq.x,STALLS[si].z-fq.z)<3.4)clash=true;
+    for(var bi=0;bi<B.length&&!clash;bi++){ var bb=B[bi]; if(bb.dx!==undefined&&Math.hypot(bb.dx-fq.x,bb.dz-fq.z)<2.2)clash=true; }
+    if(clash)PROPS.splice(fi,1);
+  }
+  var g={n:PROPS.length,m:new Map()};
+  for(var i=0;i<PROPS.length;i++){ var q=PROPS[i];
+    var x0=Math.floor((q.x-q.w/2-PROPMARGIN)/PROPCELL), x1=Math.floor((q.x+q.w/2+PROPMARGIN)/PROPCELL);
+    var z0=Math.floor((q.z-q.d/2-PROPMARGIN)/PROPCELL), z1=Math.floor((q.z+q.d/2+PROPMARGIN)/PROPCELL);
+    for(var cx=x0;cx<=x1;cx++)for(var cz=z0;cz<=z1;cz++){ var k=cx*100003+cz, b=g.m.get(k); if(!b){b=[];g.m.set(k,b);} b.push(q); } }
+  PROPGRID=g; return g;
+}
 /* A stallholder cannot be kept out of his own stall: the seat behind his
    counter is inside the stall's own collision box, and with no way to stand
    there he either leaned on the front of it for good or was walked through
@@ -4432,10 +4483,19 @@ function blockedAt(x,z,pad){
     if(b.kind==="market"||!b.w||!b.d)continue;
     if(Math.abs(x-b.x)<b.w/2+pad&&Math.abs(z-b.z)<b.d/2+pad)return true;
   }
-  for(i=0;i<PROPS.length;i++){
-    var q2=PROPS[i];
-    if(BLOCK_IGNORE&&q2.tag===BLOCK_IGNORE)continue;
-    if(Math.abs(x-q2.x)<q2.w/2+pad&&Math.abs(z-q2.z)<q2.d/2+pad)return true;
+  if(pad<=PROPMARGIN){
+    var bucket=propGrid().m.get(Math.floor(x/PROPCELL)*100003+Math.floor(z/PROPCELL));
+    if(bucket)for(i=0;i<bucket.length;i++){
+      var q2=bucket[i];
+      if(BLOCK_IGNORE&&q2.tag===BLOCK_IGNORE)continue;
+      if(BLOCK_SOFT&&propSoft(q2))continue;
+      if(Math.abs(x-q2.x)<q2.w/2+pad&&Math.abs(z-q2.z)<q2.d/2+pad)return true;
+    }
+  } else for(i=0;i<PROPS.length;i++){
+    var q3=PROPS[i];
+    if(BLOCK_IGNORE&&q3.tag===BLOCK_IGNORE)continue;
+    if(BLOCK_SOFT&&propSoft(q3))continue;
+    if(Math.abs(x-q3.x)<q3.w/2+pad&&Math.abs(z-q3.z)<q3.d/2+pad)return true;
   }
   return false;
 }
@@ -4615,6 +4675,10 @@ function stepVendors(dt){
     /* everything this man does this tick is done with his own stall open to
        him and every other wall in the town solid */
     BLOCK_IGNORE="stall"+v.vendor;
+    /* the six stallholders walk one fixed errand a day between the same two
+       doors; a tree the town builder set on it would trap one for good, so
+       they step round the stonework and not the furniture */
+    BLOCK_SOFT=true;
     var home=null; for(var j=0;j<B.length;j++)if(B[j].id===v.home){home=B[j];break;}
     if(!home)continue;
     var seat=vendorSeat(st);
@@ -4658,6 +4722,17 @@ function stepVendors(dt){
       while(v.leg.length>1&&Math.hypot(v.leg[0][0]-v.x,v.leg[0][1]-v.z)<0.9)v.leg.shift();
       wp=v.leg[0];
     } else wp=(ed<2.4)?[v.tx,v.tz]:walkerAdvance(v);
+    /* A fountain or a cart square across the straight walk sent a
+       stallholder sliding up one face and back down it for good, picking
+       a different side each frame. He picks a corner round it once and
+       holds to it until he is there. */
+    if(v.detour){
+      v.detourT-=dt;
+      if(v.detourT<=0||Math.hypot(v.detour[0]-v.x,v.detour[1]-v.z)<0.6)v.detour=null; else wp=v.detour;
+    } else {
+      var bq=propOnLine(v.x,v.z,wp[0],wp[1]);
+      if(bq){ var dc=propCorner(bq,v.x,v.z,wp[0],wp[1]); if(dc){ v.detour=dc; v.detourT=10; wp=dc; } }
+    }
     var lx=wp[0]-v.x, lz=wp[1]-v.z, ld=Math.hypot(lx,lz)||1;
     var amt=v.sp*(v.hurry?1.9:1)*dt;
     /* This used to walk the last 2.4 units with collision switched off, so
@@ -4672,9 +4747,9 @@ function stepVendors(dt){
       v.hx=lx/ld; v.hz=lz/ld;
       v.stuckT=(v.stuckT||0)+1;
     }
-    BLOCK_IGNORE=null;
+    BLOCK_IGNORE=null; BLOCK_SOFT=false;
   }
-  BLOCK_IGNORE=null;
+  BLOCK_IGNORE=null; BLOCK_SOFT=false;
 }
 function vendorLine(v){
   var st=STALLS[v.vendor]||{kind:0};
@@ -6189,6 +6264,7 @@ function stallG(x,z,col,seed){
 }
 function treeG(x,z,h){
   if(!treeOK(x,z))return;
+  prop(x,z,0.55,0.55,"tree");
   var _cy=CURY; CURY=standH(x,z);
   var fol=SEASONCOL.tree, bark=[86,64,40];
   var sd=((Math.round(x*7.3)*73856093)^(Math.round(z*7.3)*19349663))>>>0;
@@ -6226,6 +6302,11 @@ function treeG(x,z,h){
    a stylised grain, not true UV-mapped skin, but it reads as skin rather than plastic */
 var SKINCOLORS=[[224,186,152],[194,146,110],[236,204,168],[158,110,78]];
 function lampG(x,z){
+  /* a lamp tucked beside a stall is left out of the way of its keeper's
+     own walk to his counter; every other lamp post is solid */
+  var byStall=false;
+  for(var si=0;si<STALLS.length;si++)if(Math.hypot(STALLS[si].x-x,STALLS[si].z-z)<2.8){byStall=true;break;}
+  if(!byStall)prop(x,z,0.34,0.34,"lamp");
   var _cy=CURY; CURY=standH(x,z);
   boxG(x,z,.26,.26,0,1.6,[70,56,40]);
   boxG(x,z,.5,.5,1.6,1.95,[86,70,50]);
@@ -6295,6 +6376,7 @@ function flagG(x,z,poleH,big,col,col2){
   CURY=_cy;
 }
 function cartG(x,z){
+  prop(x,z,1.8,1.0,"cart");
   var _cy=CURY; CURY=standH(x,z);
   boxG(x,z,1.7,.9,.42,.98,[112,80,48],0,TILE.PLANK);
   boxG(x-.62,z,.3,.3,0,.42,[46,38,32]);
@@ -8255,7 +8337,7 @@ function buildGeo(){
      the market stood in a hole. Each one stands on the ground it is
      actually on, the way the trees and the milestones do. */
   conduitG(mcx,mcz);
-  prop(mcx,mcz,3.0,3.0);   /* the basin; the low steps can be stood on */
+  prop(mcx,mcz,3.0,3.0);   /* the basin; the low steps can be stood on, and footH puts the feet on them */
   G.conduits=(G.conduits||[]); G.conduits.push([mcx,mcz]);
   for(var cq=0;cq<4;cq++){
     var ca=(cq+0.5)/4*6.2832;
@@ -11163,7 +11245,11 @@ var GLB_POSE_STEPS=24, GLB_POSE_CACHE={};
    but takes the skull to 1.95, because a child's head is nearly a
    quarter of them. Same numbers here so a modelled child and a
    procedural one are the same child. */
-var GLB_KID_SCALE=0.60, GLB_KID_HEAD=1.95;
+/* 1.95 swelled a child's skull to nearly twice an adult's before the whole
+   body was taken down to 0.60 -- a head 1.17 times a grown man's on a
+   body three-fifths his size. A child's head is big for its body, not
+   bigger than its father's: 1.40 gives about 0.84 of an adult head. */
+var GLB_KID_SCALE=0.60, GLB_KID_HEAD=1.40;
 /* Painted faces, behind one switch. Good enough for now; the ceiling is
    the head itself -- 500 triangles with no sockets or mouth cavity -- not
    the projection or the paint. Set to 0 to go back to blank heads. */
@@ -11655,7 +11741,7 @@ function accMeasure(ch){
   var J=skin.joints, byName={}, j;
   for(j=0;j<J.length;j++){ var nm=((ch.nodes[J[j]]||{}).name||"").toLowerCase(); if(nm)byName[nm]=j; }
   function jn(name,idx){ return byName[name]!==undefined?byName[name]:(J.length===65?idx:-1); }
-  var B={head:jn("head",6),pelvis:jn("pelvis",1),spine1:jn("spine_01",2),chest:jn("spine_03",4),
+  var B={head:jn("head",6),neck:jn("neck_01",5),pelvis:jn("pelvis",1),spine1:jn("spine_01",2),chest:jn("spine_03",4),
          thighL:jn("thigh_l",55),thighR:jn("thigh_r",60)};
   if(B.head<0||B.pelvis<0||B.chest<0)return null;
   function box(ji,th){
@@ -11688,6 +11774,7 @@ function accTri(G,a,b,c,col){
   var nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx, l=Math.hypot(nx,ny,nz)||1;
   G.push({v:[a,b,c],n:[nx/l,ny/l,nz/l],c:col});
 }
+function accTriN(G,a,b,c,na,nb,nc,col){ G.push({v:[a,b,c],n:na,vn:[na,nb,nc],c:col}); }
 function accQuad(G,a,b,c,d,col,two){ accTri(G,a,b,c,col); accTri(G,a,c,d,col); if(two){accTri(G,a,c,b,col);accTri(G,a,d,c,col);} }
 /* Cloth below the hips cannot ride the hips alone: the legs swing through
    it. A skirt was a rigid bell on the pelvis, so every stride put a knee
@@ -11709,15 +11796,23 @@ function accLegs(G,M,topJ,topY,hemY){
 }
 /* a cap of an ellipsoid round centre c with radii r, kept where keep(az,el)
    says -- az 0 is straight ahead (+Z), el is up from the equator */
+/* Hair, hats and beards were flat-shaded shells of eighteen by ten
+   facets, and a coarse shell drawn close to a round head reads as a
+   block with the scalp showing through its corners. The shells are
+   finer now and carry the ellipsoid's own smooth normal at every corner,
+   so they shade round. */
 function accShell(G,c,r,keep,col,segA,segE){
-  segA=segA||18; segE=segE||10;
+  segA=segA||26; segE=segE||15;
   function P(i,k){ var az=i/segA*6.2832, el=-1.5708+k/segE*3.1416;
     return [c[0]+r[0]*Math.cos(el)*Math.sin(az), c[1]+r[1]*Math.sin(el), c[2]+r[2]*Math.cos(el)*Math.cos(az)]; }
+  function N(p){ var nx=(p[0]-c[0])/(r[0]*r[0]), ny=(p[1]-c[1])/(r[1]*r[1]), nz=(p[2]-c[2])/(r[2]*r[2]), l=Math.hypot(nx,ny,nz)||1;
+    return [nx/l,ny/l,nz/l]; }
   for(var i=0;i<segA;i++)for(var k=0;k<segE;k++){
     var az=(i+0.5)/segA*6.2832, el=-1.5708+(k+0.5)/segE*3.1416;
     var a2=az>3.1416?az-6.2832:az;
     if(!keep(a2,el))continue;
-    accQuad(G,P(i,k),P(i+1,k),P(i+1,k+1),P(i,k+1),col);
+    var p0=P(i,k),p1=P(i+1,k),p2=P(i+1,k+1),p3=P(i,k+1);
+    accTriN(G,p0,p1,p2,N(p0),N(p1),N(p2),col); accTriN(G,p0,p2,p3,N(p0),N(p2),N(p3),col);
   }
 }
 function accBox(G,c,h,col){
@@ -11767,20 +11862,26 @@ function accHeadGeo(M,L,hairCol){
   var hat=L.hat, covered=(hat==="coif"||hat==="hood"||hat==="veil"||hat==="kettle"||hat==="nasal"||hat==="skull"||hat==="kerchief");
   /* hair first -- under a close hat only what shows below it */
   var hs=L.hair;
-  if(hs===1||hs===4||hs>=5)accShell(G,c,R(1.10),function(az,el){
-      var yy=y(el,1.10); if(front(az))return yy>cy+0.32*ry;
+  if(hs===1||hs===4||hs>=5)accShell(G,c,R(1.14),function(az,el){
+      var yy=y(el,1.14); if(front(az))return yy>cy+0.34*ry;
       return yy>cy-(hs===4||hs>=5?0.55:0.30)*ry; },hairCol);
-  if(hs===2)accShell(G,c,R(1.14),function(az,el){
-      var yy=y(el,1.14); return front(az)?yy>cy+0.12*ry:yy>cy-0.22*ry; },hairCol);
-  if(hs===3)accShell(G,c,R(1.08),function(az,el){
-      var yy=y(el,1.08); return !front(az)&&Math.abs(az)>1.2&&yy>cy-0.45*ry&&yy<cy+0.10*ry; },hairCol);
-  if(hs===4||hs===5)accBox(G,[c[0],cy-0.85*ry,c[2]-r[2]*0.92],[r[0]*0.78,ry*0.55,r[2]*0.16],hairCol);
-  if(hs===6)accShell(G,[c[0],cy+0.10*ry,c[2]-r[2]*1.12],[r[0]*0.42,ry*0.34,r[2]*0.38],function(){return true;},hairCol,10,6);
-  if(hs===7){ accBox(G,[c[0]+r[0]*0.95,cy-1.05*ry,c[2]-r[2]*0.1],[r[0]*0.13,ry*0.62,r[2]*0.13],hairCol);
-              accBox(G,[c[0]-r[0]*0.95,cy-1.05*ry,c[2]-r[2]*0.1],[r[0]*0.13,ry*0.62,r[2]*0.13],hairCol); }
+  if(hs===2)accShell(G,c,R(1.18),function(az,el){
+      var yy=y(el,1.18); return front(az)?yy>cy+0.14*ry:yy>cy-0.22*ry; },hairCol);
+  if(hs===3)accShell(G,c,R(1.12),function(az,el){
+      var yy=y(el,1.12); return !front(az)&&Math.abs(az)>1.2&&yy>cy-0.45*ry&&yy<cy+0.10*ry; },hairCol);
+  /* long hair falls down the back of the neck as hair does -- a curved
+     curtain continuing the skull, not a plank hung behind it */
+  if(hs===4||hs===5){
+    var lc=[c[0],cy-0.42*ry,c[2]-r[2]*0.04], lr=[r[0]*1.13,ry*1.55,r[2]*1.10];
+    accShell(G,lc,lr,function(az,el){ var yy=lc[1]+Math.sin(el)*lr[1];
+      return Math.abs(az)>(hs===5?1.55:1.85)&&yy<cy-0.20*ry&&yy>cy-(hs===5?1.55:1.20)*ry; },hairCol);
+  }
+  if(hs===6)accShell(G,[c[0],cy+0.10*ry,c[2]-r[2]*1.14],[r[0]*0.44,ry*0.36,r[2]*0.40],function(){return true;},hairCol,14,9);
+  if(hs===7){ accTube(G,[c[0]+r[0]*0.92,cy-0.30*ry,c[2]-r[2]*0.05],[c[0]+r[0]*0.96,cy-1.65*ry,c[2]+r[2]*0.35],r[0]*0.20,r[0]*0.13,hairCol,7);
+              accTube(G,[c[0]-r[0]*0.92,cy-0.30*ry,c[2]-r[2]*0.05],[c[0]-r[0]*0.96,cy-1.65*ry,c[2]+r[2]*0.35],r[0]*0.20,r[0]*0.13,hairCol,7); }
   /* beards */
-  if(L.beard===1)accShell(G,c,R(1.07),function(az,el){
-      var yy=y(el,1.07); return Math.abs(az)<1.45&&yy<cy-0.22*ry&&yy>cy-1.08*ry; },hairCol,18,12);
+  if(L.beard===1)accShell(G,c,R(1.09),function(az,el){
+      var yy=y(el,1.09); return Math.abs(az)<1.45&&yy<cy-0.22*ry&&yy>cy-1.08*ry; },hairCol,26,16);
   if(L.beard===2)accBox(G,[c[0],cy-0.30*ry,c[2]+r[2]*1.0],[r[0]*0.42,ry*0.06,r[2]*0.07],hairCol);
   if(L.beard===3)accBox(G,[c[0],cy-0.78*ry,c[2]+r[2]*0.86],[r[0]*0.26,ry*0.20,r[2]*0.12],hairCol);
   /* hats */
@@ -11831,7 +11932,21 @@ function accHeadGeo(M,L,hairCol){
 /* over the tunic: belt and purse, apron, cloak, the watch's tabard. The
    front pieces stand off by the belly this build pushes out. */
 function accBodyGeo(M,L,build){
-  var Gp=[], Gc=[], F=M.front, Bk=M.back, S=M.side, arms={};
+  var Gp=[], Gc=[], F=M.front, Bk=M.back, S=M.side, arms={}, Gn=[];
+  /* The head and the neck are two bones that bend apart, and at close
+     range the join opens -- the head reads as sitting on the body rather
+     than growing out of it. A short column of the person's own skin rides
+     the neck bone from the collar up inside the jaw: where the join is
+     closed it is buried and invisible, where it opens it fills it. */
+  if(M.NK&&M.H){
+    var nkr=[M.NK.r[0]*0.86+Math.max(0,build||0)*GLB_FAT_MAX*0.40, M.NK.r[2]*0.86+Math.max(0,build||0)*GLB_FAT_MAX*0.40];
+    var nt=Math.min(M.H.lo[1]+0.05,M.H.c[1]-0.02), nb=M.NK.lo[1]-0.02;
+    for(var ni=0;ni<12;ni++){ var na=ni/12*6.2832, nb2=(ni+1)/12*6.2832;
+      var pn=function(t,yy){return [M.NK.c[0]+Math.sin(t)*nkr[0],yy,M.NK.c[2]+Math.cos(t)*nkr[1]];};
+      var n0=[Math.sin(na),0,Math.cos(na)], n1=[Math.sin(nb2),0,Math.cos(nb2)];
+      accTriN(Gn,pn(na,nb),pn(nb2,nb),pn(nb2,nt),n0,n1,n1,L.skin||[200,160,130]);
+      accTriN(Gn,pn(na,nb),pn(nb2,nt),pn(na,nt),n0,n1,n0,L.skin||[200,160,130]); }
+  }
   var push=Math.max(0,build||0)*GLB_FAT_MAX*1.55, pushS=Math.max(0,build||0)*GLB_FAT_MAX*0.9;
   var wy=M.waistY-0.03, hy=M.hipY, sy=M.shoulderY, czc=(F+Bk)/2, dz=(F-Bk)/2;
   var up=L.up||null, cloth=up||L.woolCol;
@@ -11914,7 +12029,7 @@ function accBodyGeo(M,L,build){
       arms[k[0]]={j:U.j,G:g1}; arms[k[1]]={j:Lo.j,G:g2};
     });
   }
-  return {pelvis:Gp,chest:Gc,arms:arms};
+  return {pelvis:Gp,chest:Gc,arms:arms,neck:Gn};
 }
 /* ride a bone: bind space -> this pose -> this person's height -> the town */
 function accEmit(op,ch,posed,G,joint,x,z,gy,hx,hz,LOOK,tile){
@@ -11938,7 +12053,10 @@ function accEmit(op,ch,posed,G,joint,x,z,gy,hx,hz,LOOK,tile){
       var ux=pts[1][0]-pts[0][0],uy=pts[1][1]-pts[0][1],uz=pts[1][2]-pts[0][2],vx=pts[2][0]-pts[0][0],vy=pts[2][1]-pts[0][1],vz=pts[2][2]-pts[0][2];
       var cx2=uy*vz-uz*vy, cy2=uz*vx-ux*vz, cz2=ux*vy-uy*vx, cl=Math.hypot(cx2,cy2,cz2);
       if(cl>1e-9){ wx=cx2/cl; ny=cy2/cl; wz=cz2/cl; } }
-    op.push({p:pts, n:[wx,ny,wz,wx,ny,wz,wx,ny,wz], c:f.c, vc:null,
+    var NN=[wx,ny,wz,wx,ny,wz,wx,ny,wz];
+    if(f.vn&&!f.sk){ for(var q=0;q<3;q++){ var v=f.vn[q], ax=Mj[0]*v[0]+Mj[4]*v[1]+Mj[8]*v[2], ay=Mj[1]*v[0]+Mj[5]*v[1]+Mj[9]*v[2], az=Mj[2]*v[0]+Mj[6]*v[1]+Mj[10]*v[2];
+      NN[q*3]=rx*ax+hx*az; NN[q*3+1]=ay; NN[q*3+2]=rz*ax+hz*az; } }
+    op.push({p:pts, n:NN, c:f.c, vc:null,
              m:1, tile:(f.c===ACC_STEEL||f.c[0]===118?TILE.STONE:(f.c===ACC_STRAW?TILE.THATCH:tile)), ao:1, glb:1});
   }
 }
@@ -11951,13 +12069,15 @@ function glbAccessories(op,ch,posed,x,z,gy,hx,hz,uid,build,L,hasHelm){
   var hk="h|"+L.hair+"|"+L.beard+"|"+L.hat+"|"+hairCol+"|"+ks(L.hatCol)+"|"+ks(L.woolCol)+"|"+ks(L.veilCol);
   var hg=ch._accCache[hk]||(ch._accCache[hk]=accHeadGeo(M,L,hairCol));
   var bq=Math.round((build||0)*10)/10;
+  if(!L.skin)L=Object.assign({},L,{skin:LOOK.skin});      /* the neck is this person's own skin */
   var bk="b|"+[L.belt,L.apron,L.cloak,L.tabard,L.gown,L.cote,L.sleeves,L.sack,L.collar].map(function(v){return v?1:0;}).join("")+
-         "|"+bq+"|"+ks(L.woolCol)+"|"+ks(L.up)+"|"+ks(L.lo)+"|"+ks(L.vest)+"|"+ks(L.hem)+"|"+ks(L.mantle)+"|"+ks(L.beltCol)+"|"+(L.sleeves||0);
+         "|"+bq+"|"+ks(L.skin)+"|"+ks(L.woolCol)+"|"+ks(L.up)+"|"+ks(L.lo)+"|"+ks(L.vest)+"|"+ks(L.hem)+"|"+ks(L.mantle)+"|"+ks(L.beltCol)+"|"+(L.sleeves||0);
   var bg=ch._accCache[bk]||(ch._accCache[bk]=accBodyGeo(M,L,bq));
   accEmit(op,ch,posed,hg,M.B.head,x,z,gy,hx,hz,LOOK,TILE.CLOTH);
   accEmit(op,ch,posed,bg.pelvis,M.B.pelvis,x,z,gy,hx,hz,LOOK,TILE.CLOTH);
   accEmit(op,ch,posed,bg.chest,M.B.spine1>=0?M.B.spine1:M.B.chest,x,z,gy,hx,hz,LOOK,TILE.CLOTH);
   for(var k in bg.arms)accEmit(op,ch,posed,bg.arms[k].G,bg.arms[k].j,x,z,gy,hx,hz,LOOK,TILE.CLOTH);
+  if(bg.neck&&bg.neck.length&&M.B.neck>=0)accEmit(op,ch,posed,bg.neck,M.B.neck,x,z,gy,hx,hz,LOOK,TILE.SKIN);
 }
 /* the lowest edge of this body's tunic in the bind pose, so a trim can
    run round the hem */
