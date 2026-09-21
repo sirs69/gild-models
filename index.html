@@ -253,7 +253,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.030</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.031</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -11292,13 +11292,28 @@ var GARB_LOWER=[[74,62,48],[56,70,52],[92,76,58],[60,58,66],[104,88,64],
                 [48,54,62],[86,64,50],[70,80,70]];
 var GARB_BOOT =[[62,46,34],[48,38,30],[82,62,44],[40,34,30]];
 var HAIRCOL   =[[42,32,26],[86,58,34],[142,112,62],[176,152,104],[150,146,142],[120,54,30]];
+/* Tunic and hose came out of two separate piles, so a cream shirt got
+   bright green legs and a red one got blue. The legs now follow the body:
+   the same dye taken darker for most people, a dark neutral that goes
+   with anything for a good share, and now and then one cloth top to
+   bottom. Nobody clashes with themselves. */
+var GARB_NEUTRAL=[[74,62,48],[60,58,66],[48,54,62],[86,64,50],[66,60,54]];
+function glbMatchLo(up,uid){
+  var s=(((uid||1)+0x7F4A)*2246822519)>>>0; s^=s>>>13; s=Math.imul(s,0x5bd1e995)>>>0; s^=s>>>15;
+  var r=s%100;
+  if(r<58){ var g=(up[0]+up[1]+up[2])/3;
+    return [Math.round((up[0]*0.8+g*0.2)*0.60),Math.round((up[1]*0.8+g*0.2)*0.60),Math.round((up[2]*0.8+g*0.2)*0.60)]; }
+  if(r<86)return GARB_NEUTRAL[(s>>>8)%GARB_NEUTRAL.length];
+  return up.slice();
+}
 function glbLook(uid){
   /* Each slot gets its own hash rather than a different bit-slice of one.
      Slicing one 32-bit value at shifts 3/9/15/19/25 overlaps heavily, and
      two people in six came out wearing the identical outfit because of it. */
   function h(n,salt){ var s=(((n+salt)*2654435761)>>>0); s^=s>>>15; s=(s*668265261)>>>0; return s^(s>>>13); }
   function pick(arr,salt){ return arr[(h(uid||1,salt)>>>0)%arr.length]; }
-  return { up:pick(GARB_UPPER,0x9E37), lo:pick(GARB_LOWER,0x85EB), bt:pick(GARB_BOOT,0xC2B2),
+  var UP=pick(GARB_UPPER,0x9E37);
+  return { up:UP, lo:glbMatchLo(UP,uid), bt:pick(GARB_BOOT,0xC2B2),
            hair:pick(HAIRCOL,0x27D4), skin:SKINCOLORS[(h(uid||1,0x165667)>>>0)%SKINCOLORS.length],
            tall:0.94+((h(uid||1,0xD3A2)>>>0)%1000)/1000*0.13,
            girth:0.97+((h(uid||1,0x4F1B)>>>0)%1000)/1000*0.06 };
@@ -11306,6 +11321,22 @@ function glbLook(uid){
 /* recolour a triangle toward a target while keeping the model's own
    shading: the baked colour carries the light and the folds, so the part
    is re-dyed by its own brightness rather than replaced flat */
+/* The renderer draws a face's per-corner colours in place of its flat
+   colour whenever it has them, and the character models carry baked
+   vertex colours -- so every outfit dye, skin tone and hair colour worked
+   out per person was computed and then thrown away at upload, and every
+   man in town wore his model's own cream shirt and whatever trousers it
+   came with. The dye now goes onto those corner colours, keeping each
+   corner's own light and dark the same way glbDye keeps a face's. */
+function glbDyeVC(prim,a,b,c,T){
+  var L=prim._vlum;
+  if(!L){ var vc=prim.vertColor, n=prim.nv; L=prim._vlum=new Float32Array(n);
+    for(var i=0;i<n;i++)L[i]=0.55+((vc[i*3]*0.299+vc[i*3+1]*0.587+vc[i*3+2]*0.114)/255)*0.75; }
+  var fa=L[a], fb=L[b], fc=L[c];
+  return [Math.min(255,T[0]*fa),Math.min(255,T[1]*fa),Math.min(255,T[2]*fa),
+          Math.min(255,T[0]*fb),Math.min(255,T[1]*fb),Math.min(255,T[2]*fb),
+          Math.min(255,T[0]*fc),Math.min(255,T[1]*fc),Math.min(255,T[2]*fc)];
+}
 function glbDye(r,g,b,target){
   var lum=(r*0.299+g*0.587+b*0.114)/255;
   var f=0.55+lum*0.75;
@@ -11405,7 +11436,7 @@ function glbPlace(op,ch,posed,x,z,gy,hx,hz,uid,build,dress){
   var faceCell=(ch._female?TILE.FACE_F:TILE.FACE_M);
   var TN=glbTint(uid);
   var LOOK=glbLook(uid), PK=null;
-  var DUP=(dress&&dress.up)||LOOK.up, DLO=(dress&&dress.lo)||LOOK.lo, DMI=dress&&dress.mi, DHEM=dress&&dress.hem&&!dress.cote&&!dress.gown;
+  var DUP=(dress&&dress.up)||LOOK.up, DLO=(dress&&dress.lo)||glbMatchLo(DUP,uid), DMI=!!(dress&&dress.mi), DHEM=dress&&dress.hem&&!dress.cote&&!dress.gown;
   var BP=prim.pos, HEMY=DHEM?glbHemY(ch):-1e9;
   try{ PK=glbParts(ch).kind; }catch(e){}
   /* Build and height, per person. The posed vertices are cached and shared
@@ -11432,12 +11463,13 @@ function glbPlace(op,ch,posed,x,z,gy,hx,hz,uid,build,dress){
        ends up as for this particular person */
     var _r=tc[ti*3],_g=tc[ti*3+1],_b=tc[ti*3+2];
     var PCOL;
+    var TGT=null;
     switch(PK?PK[ti]:0){
-      case 1: PCOL=glbDye(_r,_g,_b,LOOK.skin); break;   /* hands, arms, face */
-      case 2: PCOL=glbDye(_r,_g,_b,LOOK.hair); break;   /* hair, hood, cap */
-      case 3: PCOL=glbDye(_r,_g,_b,(DHEM&&BP[a*3+1]<HEMY)?DHEM:((DMI&&BP[a*3]<0)?DMI:DUP)); break;   /* tunic, sleeves */
-      case 4: PCOL=glbDye(_r,_g,_b,(DMI&&BP[a*3]>0)?DMI:DLO); break;   /* hose, skirt: the other leg takes the other colour */
-      case 5: PCOL=glbDye(_r,_g,_b,LOOK.bt);   break;   /* boots */
+      case 1: TGT=LOOK.skin; PCOL=glbDye(_r,_g,_b,TGT); break;   /* hands, arms, face */
+      case 2: TGT=LOOK.hair; PCOL=glbDye(_r,_g,_b,TGT); break;   /* hair, hood, cap */
+      case 3: TGT=(DHEM&&BP[a*3+1]<HEMY)?DHEM:((DMI&&BP[a*3]<0)?DLO:DUP); PCOL=glbDye(_r,_g,_b,TGT); break;   /* tunic, sleeves */
+      case 4: TGT=(DMI&&BP[a*3]>0)?DUP:DLO; PCOL=glbDye(_r,_g,_b,TGT); break;   /* hose: parti-colour crosses the two over */
+      case 5: TGT=LOOK.bt; PCOL=glbDye(_r,_g,_b,TGT);   break;   /* boots */
       default: PCOL=[_r,_g,_b];
     }
     if(GLB_FACE_PAINT&&hu&&hu.on[a]&&hu.on[b]&&hu.on[c]){
@@ -11464,9 +11496,9 @@ function glbPlace(op,ch,posed,x,z,gy,hx,hz,uid,build,dress){
         c:glbDye(tc[ti*3],tc[ti*3+1],tc[ti*3+2],LOOK.skin),
         /* the painted face still takes the person's own complexion, so the
            face matches the hands rather than staying the model's one tone */
-        vc:vcl?[vcl[a*3],vcl[a*3+1],vcl[a*3+2],
-                vcl[b*3],vcl[b*3+1],vcl[b*3+2],
-                vcl[c*3],vcl[c*3+1],vcl[c*3+2]]:null,
+        vc:vcl?(TGT?glbDyeVC(prim,a,b,c,TGT):[vcl[a*3],vcl[a*3+1],vcl[a*3+2],
+              vcl[b*3],vcl[b*3+1],vcl[b*3+2],
+              vcl[c*3],vcl[c*3+1],vcl[c*3+2]]):null,
         uv:[hu.uv[a*2],hu.uv[a*2+1],hu.uv[b*2],hu.uv[b*2+1],hu.uv[c*2],hu.uv[c*2+1]],
         m:1, tile:faceCell, ao:1, glb:1});
       continue;
@@ -11494,9 +11526,9 @@ function glbPlace(op,ch,posed,x,z,gy,hx,hz,uid,build,dress){
          blobs. The measured seam is fine either way -- worst stretch
          1.10-1.30 across both clips on all three models, before and after
          subdivision -- so the tile was never the cause. */
-      vc:vcl?[vcl[a*3],vcl[a*3+1],vcl[a*3+2],
+      vc:vcl?(TGT?glbDyeVC(prim,a,b,c,TGT):[vcl[a*3],vcl[a*3+1],vcl[a*3+2],
               vcl[b*3],vcl[b*3+1],vcl[b*3+2],
-              vcl[c*3],vcl[c*3+1],vcl[c*3+2]]:null,
+              vcl[c*3],vcl[c*3+1],vcl[c*3+2]]):null,
       m:1, tile:(tt?tt[ti]:TILE.CLOTH), ao:1, glb:1});
   }
 }
@@ -11513,7 +11545,7 @@ function glbPlace(op,ch,posed,x,z,gy,hx,hz,uid,build,dress){
    the head, walks with the hips, grows with a tall man and stands clear
    of a fat man's belly. Built once, cached per body and style, moved per
    draw: a few hundred vertices a figure. */
-var GLB_ACC_ERR=0;
+var GLB_ACC_ERR=0, GLB_PLAYER_DRAW=false;
 var ACC_LINEN=[228,220,198], ACC_STRAW=[206,178,112], ACC_STEEL=[158,162,170],
     ACC_LEATHER=[104,72,46], ACC_TABARD=[162,38,34];
 var ACC_FELT=[[92,70,52],[70,80,58],[108,54,44],[64,64,74],[124,102,72],[54,48,44],[82,60,90]];
@@ -11557,9 +11589,9 @@ function accLook(uid,female,guard,garb){
   var o=accPickW(uid,0x41,[42,18,14,26]);
   L.belt=(o===0||o===1); L.apron=(o===1); L.cloak=(o===2);
   /* the everyday dash of colour: a jerkin, a parti-coloured coat, a hem */
-  L.vest=h(0x42,100)<16?ACC_WOOL[h(0x43,ACC_WOOL.length)]:null;
-  L.mi=h(0x44,100)<13?ACC_MUTED[h(0x45,ACC_MUTED.length)]:null;
-  L.hem=h(0x46,100)<24?ACC_RICH[h(0x47,ACC_RICH.length)]:null;
+  L.vest=h(0x42,100)<16?1:null;               /* coloured to match below, once the cloth is known */
+  L.mi=h(0x44,100)<13?1:null;                  /* parti-colour in the outfit's own two colours */
+  L.hem=h(0x46,100)<24?1:null;
   switch(garb){
     case "friar":
       L.hair=3; L.beard=accPickW(uid,0x61,[50,40,0,10]); L.hat=h(0x62,2)?"hood":null;
@@ -11584,7 +11616,7 @@ function accLook(uid,female,guard,garb){
       L.cote=1; L.sleeves=1; L.hat="felt"; L.up=ACC_RICH[h(0x69,ACC_RICH.length)]; L.apron=0; break;
     case "labourer":
       L.hat=["straw","coif",null,"cap"][h(0x6A,4)]; L.belt=1; L.apron=L.cloak=0; L.sleeves=0; L.cote=0;
-      L.mi=L.hem=null; L.vest=h(0x6B,3)?null:ACC_LEATHER; break;
+      L.mi=L.hem=null; L.vest=h(0x6B,3)?null:ACC_LEATHER; break;   /* leather stays leather */
     case "porter":
       L.sack=1; L.hat=["cap","coif",null][h(0x6C,3)]; L.belt=1; L.cloak=0; L.apron=0; break;
     case "beggar":
@@ -11600,6 +11632,12 @@ function accLook(uid,female,guard,garb){
       L.apron=1; L.belt=1; L.cloak=0; L.mi=null; break;
   }
   if(L.gown||L.cote)L.mi=null;                 /* parti-colour is a short-coat fashion */
+  /* whatever the role set, the two colours are settled here, together */
+  if(!L.up)L.up=glbLook(uid).up;
+  if(!L.lo)L.lo=glbMatchLo(L.up,uid);
+  if(L.vest===1)L.vest=h(0x43,2)?ACC_LEATHER:[Math.round(L.lo[0]*0.8),Math.round(L.lo[1]*0.8),Math.round(L.lo[2]*0.8)];
+  if(L.hem===1)L.hem=(L.lo[0]===L.up[0]&&L.lo[1]===L.up[1]&&L.lo[2]===L.up[2])?
+      [Math.round(L.up[0]*0.62),Math.round(L.up[1]*0.62),Math.round(L.up[2]*0.62)]:L.lo;
   return L;
 }
 /* the body measured in its own bind pose: where the head is and how big,
@@ -11795,7 +11833,7 @@ function accBodyGeo(M,L,build){
      a bell off the hips wide enough at the hem to hold a stride */
   if(L.gown||L.cote){
     var hemY=L.gown?0.07:0.50, rb=L.gown?[0.35+pushS,0.37+push*0.3]:[0.27+pushS,0.29+push*0.3];
-    var col=L.gown?(L.lo||cloth):(up||L.woolCol), seg=14;
+    var col=up||L.woolCol, seg=14;
     var r0=[S+0.020+pushS,dz+0.028+push*0.55], r1=[S+0.055+pushS,dz+0.060+push*0.45];
     var z0=czc+push*0.3, y1=hy-0.06;
     for(var i=0;i<seg;i++){ var ta=i/seg*6.2832, tb=(i+1)/seg*6.2832;
@@ -11948,8 +11986,12 @@ function glbDrawFigure(op,which,x,z,gy,hx,hz,walkT,gaitAmp,weapon,uid,kid,helm,s
   /* townsfolk and the watch have a build; the player, children and beasts
      are drawn as they come */
   var build=0, isGuard=!!(subj&&G&&G.guards&&G.guards.indexOf(subj)>=0), dress=null;
-  if(subj&&!kid){ build=glbBuild(uid,isGuard);
-    try{ dress=accLook(uid,!!useCh._female,isGuard,subj.garb); }catch(e){ dress=null; } }
+  /* the player had no subject here, so he was the one bald man in town in
+     his model's own clothes; he dresses by the same rules from his own
+     seed now, and keeps an ordinary build */
+  var dsub=subj||(GLB_PLAYER_DRAW?{garb:(G&&G.garb)||"plain",player:1}:null);
+  if(dsub&&!kid){ build=dsub.player?0:glbBuild(uid,isGuard);
+    try{ dress=accLook(uid,!!useCh._female,isGuard,dsub.garb); }catch(e){ dress=null; } }
   glbPlace(op,useCh,posed,x,z,gy,hx,hz,uid,build,dress);
   if(dress){ try{ glbAccessories(op,useCh,posed,x,z,gy,hx,hz,uid,build,dress,!!helm); }
                   catch(e){ if(!GLB_ACC_ERR){GLB_ACC_ERR=1;trace("ACC: "+(e&&e.message));} } }
@@ -13511,7 +13553,7 @@ function glDynamic(){
   if(FIGHT){ var ydx=FIGHT.fx-G.px, ydz=FIGHT.fz-G.pz, ydd=Math.hypot(ydx,ydz)||1;
              lungeX=ydx/ydd*yo; lungeZ=ydz/ydd*yo; }
   var _drewPlayer=false;
-  if(!FIGHT){ try{ _drewPlayer=glbDrawFigure(op,glbForRole("walker",G.sex||0,G.pseed||7),G.px+lungeX,G.pz+lungeZ,pgy,G.hx,G.hz,G.walkT,G.gaitAmp,null,G.pseed||7); }catch(e){} }
+  if(!FIGHT){ GLB_PLAYER_DRAW=true; try{ _drewPlayer=glbDrawFigure(op,glbForRole("walker",G.sex||0,G.pseed||7),G.px+lungeX,G.pz+lungeZ,pgy,G.hx,G.hz,G.walkT,G.gaitAmp,null,G.pseed||7); }catch(e){} GLB_PLAYER_DRAW=false; }
   if(!_drewPlayer)
   glPerson(op,G.px+lungeX,G.pz+lungeZ,[196,66,52],true,true,G.skin,G.walkT,G.gaitAmp,G.hx,G.hz,G.sex||0,false,pgy,G.pseed||7,
            0,yst[0],pGarb(),yst[1]);
