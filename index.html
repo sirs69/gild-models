@@ -253,7 +253,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.028</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.029</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -11381,7 +11381,7 @@ function glbBuild(uid,guard){
   if(guard)b=Math.max(-0.10,Math.min(0.35,b));
   return b;
 }
-function glbPlace(op,ch,posed,x,z,gy,hx,hz,uid,build){
+function glbPlace(op,ch,posed,x,z,gy,hx,hz,uid,build,dress){
   var hl=Math.hypot(hx,hz)||1; hx/=hl; hz/=hl;
   var rx=hz, rz=-hx;
   var prim=ch.meshes[0][0], P=posed.pos, N=posed.nrm, idx=prim.indices, tc=prim.triColor;
@@ -11391,6 +11391,8 @@ function glbPlace(op,ch,posed,x,z,gy,hx,hz,uid,build){
   var faceCell=(ch._female?TILE.FACE_F:TILE.FACE_M);
   var TN=glbTint(uid);
   var LOOK=glbLook(uid), PK=null;
+  var DUP=(dress&&dress.up)||LOOK.up, DLO=(dress&&dress.lo)||LOOK.lo, DMI=dress&&dress.mi, DHEM=dress&&dress.hem&&!dress.cote&&!dress.gown;
+  var BP=prim.pos, HEMY=DHEM?glbHemY(ch):-1e9;
   try{ PK=glbParts(ch).kind; }catch(e){}
   /* Build and height, per person. The posed vertices are cached and shared
      between everyone using this model and clip, so the scale is applied to
@@ -11419,8 +11421,8 @@ function glbPlace(op,ch,posed,x,z,gy,hx,hz,uid,build){
     switch(PK?PK[ti]:0){
       case 1: PCOL=glbDye(_r,_g,_b,LOOK.skin); break;   /* hands, arms, face */
       case 2: PCOL=glbDye(_r,_g,_b,LOOK.hair); break;   /* hair, hood, cap */
-      case 3: PCOL=glbDye(_r,_g,_b,LOOK.up);   break;   /* tunic, sleeves */
-      case 4: PCOL=glbDye(_r,_g,_b,LOOK.lo);   break;   /* hose, skirt */
+      case 3: PCOL=glbDye(_r,_g,_b,(DHEM&&BP[a*3+1]<HEMY)?DHEM:((DMI&&BP[a*3]<0)?DMI:DUP)); break;   /* tunic, sleeves */
+      case 4: PCOL=glbDye(_r,_g,_b,(DMI&&BP[a*3]>0)?DMI:DLO); break;   /* hose, skirt: the other leg takes the other colour */
       case 5: PCOL=glbDye(_r,_g,_b,LOOK.bt);   break;   /* boots */
       default: PCOL=[_r,_g,_b];
     }
@@ -11506,27 +11508,84 @@ function accHash(uid,salt){ var s=(((uid||1)+salt)*2654435761)>>>0; s^=s>>>15; s
 function accPickW(uid,salt,w){ var t=0,i; for(i=0;i<w.length;i++)t+=w[i]; var r=(accHash(uid,salt)%10000)/10000*t;
   for(i=0;i<w.length;i++){ r-=w[i]; if(r<0)return i; } return w.length-1; }
 /* who wears what -- stable per person, like the clothes and the build */
-function accLook(uid,female,guard){
-  var L={};
+var ROBE_BROWN=[104,78,54], ROBE_BLACK=[40,38,42], ROBE_GREY=[116,112,106], ACC_ROPE=[178,156,112],
+    ACC_FUR=[204,194,172], ACC_BURLAP=[150,126,88], HAIR_GREY=[182,178,172];
+var ACC_RICH=[[98,36,42],[40,64,46],[38,46,74],[92,66,32],[72,42,80],[60,60,66]];
+var ACC_DRAB=[[118,110,96],[98,92,82],[126,118,102],[90,84,76],[108,100,86]];
+var ACC_MUTED=[[92,108,128],[108,122,96],[132,112,92],[118,96,110],[96,96,102],[140,128,104]];
+/* who wears what -- stable per person like the build, and now driven by
+   the garb the town already gives every townsman (friar, priest, elder,
+   widow, porter, beggar...) that the model figures had been ignoring:
+   the friar is in brown to his ankles with a rope at the waist, the widow
+   is in black, the elder in a long dark gown with a fur mantle, the porter
+   has his sack on his back. Everyone else gets the everyday mix: short or
+   knee-length, sleeves or bare arms, a jerkin, parti-coloured or trimmed. */
+function accLook(uid,female,guard,garb){
+  var L={}, h=function(salt,n){return accHash(uid,salt)%n;};
+  L.hatCol=ACC_FELT[h(0x51,ACC_FELT.length)];
+  L.woolCol=ACC_WOOL[h(0x52,ACC_WOOL.length)];
   if(guard){
-    L.hair=accPickW(uid,0x11,[20,45,20,15,0]);           /* bald crop bowl fringe long */
-    L.beard=accPickW(uid,0x12,[45,30,15,10]);            /* none full moustache goatee */
+    L.hair=accPickW(uid,0x11,[20,45,20,15,0]);
+    L.beard=accPickW(uid,0x12,[45,30,15,10]);
     L.hat=["kettle","nasal","skull"][accPickW(uid,0x13,[35,35,30])];
-    L.tabard=1; return L;
+    L.tabard=1; L.sleeves=1; L.up=[96,92,90]; return L;       /* mail-grey sleeves under the red */
   }
   if(female){
-    L.hair=5+accPickW(uid,0x21,[45,35,20]);              /* long, bun, braids */
-    L.beard=0;
+    L.hair=5+accPickW(uid,0x21,[45,35,20]); L.beard=0;
     L.hat=[null,"kerchief","veil","straw","hood"][accPickW(uid,0x22,[30,34,18,9,9])];
+    L.gown=h(0x23,10)<7?1:0; L.sleeves=h(0x24,10)<6?1:0;
   } else {
     L.hair=accPickW(uid,0x31,[12,32,16,14,8]);
     L.beard=accPickW(uid,0x32,[45,25,15,15]);
     L.hat=[null,"coif","felt","cap","hood","straw"][accPickW(uid,0x33,[40,14,13,12,11,10])];
+    L.cote=h(0x34,10)<3?1:0; L.sleeves=h(0x35,10)<4?1:0;
   }
-  var o=accPickW(uid,0x41,[42,18,14,26]);                /* belt, apron, cloak, nothing */
+  var o=accPickW(uid,0x41,[42,18,14,26]);
   L.belt=(o===0||o===1); L.apron=(o===1); L.cloak=(o===2);
-  L.hatCol=ACC_FELT[accHash(uid,0x51)%ACC_FELT.length];
-  L.woolCol=ACC_WOOL[accHash(uid,0x52)%ACC_WOOL.length];
+  /* the everyday dash of colour: a jerkin, a parti-coloured coat, a hem */
+  L.vest=h(0x42,100)<16?ACC_WOOL[h(0x43,ACC_WOOL.length)]:null;
+  L.mi=h(0x44,100)<13?ACC_MUTED[h(0x45,ACC_MUTED.length)]:null;
+  L.hem=h(0x46,100)<24?ACC_RICH[h(0x47,ACC_RICH.length)]:null;
+  switch(garb){
+    case "friar":
+      L.hair=3; L.beard=accPickW(uid,0x61,[50,40,0,10]); L.hat=h(0x62,2)?"hood":null;
+      L.gown=1; L.sleeves=2; L.up=L.lo=ROBE_BROWN; L.belt=1; L.beltCol=ACC_ROPE;
+      L.apron=L.cloak=0; L.vest=L.mi=L.hem=null; L.woolCol=ROBE_BROWN; break;
+    case "priest":
+      L.hair=1; L.beard=0; L.hat="zucchetto"; L.gown=1; L.sleeves=2; L.up=L.lo=ROBE_BLACK;
+      L.collar=1; L.belt=L.apron=L.cloak=0; L.vest=L.mi=L.hem=null; break;
+    case "elder":
+      L.hairCol=HAIR_GREY; L.hair=accPickW(uid,0x63,[25,15,0,60,0]); L.beard=accPickW(uid,0x64,[20,60,10,10]);
+      L.gown=1; L.sleeves=2; L.up=L.lo=ACC_RICH[h(0x65,ACC_RICH.length)];
+      L.mantle=ACC_FUR; L.hat=h(0x66,3)?null:"felt"; L.apron=L.cloak=0; L.mi=L.hem=L.vest=null; break;
+    case "widow":
+      L.gown=1; L.sleeves=1; L.hat="veil"; L.veilCol=ROBE_BLACK; L.up=L.lo=ROBE_BLACK;
+      L.hairCol=HAIR_GREY; L.apron=L.cloak=0; L.mi=L.hem=L.vest=null; break;
+    case "matron":
+      L.gown=1; L.sleeves=1; L.hat=h(0x67,2)?"veil":"kerchief"; L.up=L.lo=ACC_MUTED[h(0x68,ACC_MUTED.length)];
+      L.mi=null; break;
+    case "goodwife":
+      L.gown=1; L.apron=1; L.belt=1; L.cloak=0; L.hat="kerchief"; L.mi=null; break;
+    case "coat":
+      L.cote=1; L.sleeves=1; L.hat="felt"; L.up=ACC_RICH[h(0x69,ACC_RICH.length)]; L.apron=0; break;
+    case "labourer":
+      L.hat=["straw","coif",null,"cap"][h(0x6A,4)]; L.belt=1; L.apron=L.cloak=0; L.sleeves=0; L.cote=0;
+      L.mi=L.hem=null; L.vest=h(0x6B,3)?null:ACC_LEATHER; break;
+    case "porter":
+      L.sack=1; L.hat=["cap","coif",null][h(0x6C,3)]; L.belt=1; L.cloak=0; L.apron=0; break;
+    case "beggar":
+      L.hat=h(0x6D,3)?null:"hood"; L.belt=L.apron=L.cloak=0; L.up=L.lo=ACC_DRAB[h(0x6E,ACC_DRAB.length)];
+      L.woolCol=ACC_DRAB[h(0x6F,ACC_DRAB.length)]; L.cote=h(0x70,2); L.mi=L.hem=L.vest=null; L.sleeves=0; break;
+    case "hooded":
+      L.hat="hood"; L.mantle=L.woolCol; break;
+    case "hat":
+      L.hat=["felt","straw","cap"][h(0x71,3)]; break;
+    case "cloak":
+      L.cloak=1; L.apron=0; L.hat=[null,"hood","felt"][h(0x72,3)]; break;
+    case "apron":
+      L.apron=1; L.belt=1; L.cloak=0; L.mi=null; break;
+  }
+  if(L.gown||L.cote)L.mi=null;                 /* parti-colour is a short-coat fashion */
   return L;
 }
 /* the body measured in its own bind pose: where the head is and how big,
@@ -11548,11 +11607,20 @@ function accMeasure(ch){
       for(var a=0;a<3;a++){ var v=prim.pos[i*3+a]; if(v<lo[a])lo[a]=v; if(v>hi[a])hi[a]=v; } }
     return n?{lo:lo,hi:hi,c:[(lo[0]+hi[0])/2,(lo[1]+hi[1])/2,(lo[2]+hi[2])/2],r:[(hi[0]-lo[0])/2,(hi[1]-lo[1])/2,(hi[2]-lo[2])/2]}:null;
   }
-  var H=box(B.head,0.5), P=box(B.pelvis,0.5), S1=box(B.spine1,0.5), C=box(B.chest,0.5);
+  var H=box(B.head,0.5), P=box(B.pelvis,0.5), S1=box(B.spine1,0.5), C=box(B.chest,0.5), NK=box(jn("neck_01",5),0.3);
   if(!H||!P||!C)return null;
+  /* where each arm joint sits in the bind pose: the inverse of its
+     inverse-bind is its own frame, and the translation is the joint */
+  var arm={};
+  [["ual","upperarm_l",8],["lal","lowerarm_l",9],["hl","hand_l",10],["uar","upperarm_r",32],["lar","lowerarm_r",33],["hr","hand_r",34]].forEach(function(e){
+    var ji=jn(e[1],e[2]); if(ji<0)return;
+    var inv=m4inv(skin.inverseBind.slice(ji*16,ji*16+16));
+    arm[e[0]]={j:ji,p:[inv[12],inv[13],inv[14]]};
+  });
   ch._accM={B:B,H:H,P:P,S1:S1||P,C:C,
     front:Math.max(P.hi[2],(S1||P).hi[2],C.hi[2]), back:Math.min(P.lo[2],(S1||P).lo[2],C.lo[2]),
-    side:Math.max(P.r[0],(S1||P).r[0]), shoulderY:C.hi[1], waistY:P.hi[1], hipY:P.lo[1]};
+    side:Math.max(P.r[0],(S1||P).r[0]), shoulderY:C.hi[1], waistY:P.hi[1], hipY:P.lo[1],
+    NK:NK, arm:arm};
   return ch._accM;
 }
 /* ── the little geometry kit, all in bind space ── */
@@ -11598,6 +11666,16 @@ function accDrum(G,c,y0,y1,r,col,seg,top){
     accQuad(G,p(a,y0),p(b,y0),p(b,y1),p(a,y1),col);
     if(top)accTri(G,[c[0],y1,c[2]],p(a,y1),p(b,y1),col); }
 }
+function accTube(G,p0,p1,r0,r1,col,seg){
+  seg=seg||8;
+  var d=[p1[0]-p0[0],p1[1]-p0[1],p1[2]-p0[2]], l=Math.hypot(d[0],d[1],d[2])||1; d=[d[0]/l,d[1]/l,d[2]/l];
+  var up=Math.abs(d[1])<0.9?[0,1,0]:[1,0,0];
+  var u=[d[1]*up[2]-d[2]*up[1],d[2]*up[0]-d[0]*up[2],d[0]*up[1]-d[1]*up[0]], ul=Math.hypot(u[0],u[1],u[2])||1; u=[u[0]/ul,u[1]/ul,u[2]/ul];
+  var v=[d[1]*u[2]-d[2]*u[1],d[2]*u[0]-d[0]*u[2],d[0]*u[1]-d[1]*u[0]];
+  function R(p,r,t){ var cs=Math.cos(t)*r, sn=Math.sin(t)*r; return [p[0]+u[0]*cs+v[0]*sn,p[1]+u[1]*cs+v[1]*sn,p[2]+u[2]*cs+v[2]*sn]; }
+  for(var i=0;i<seg;i++){ var a=i/seg*6.2832, b=(i+1)/seg*6.2832;
+    accQuad(G,R(p0,r0,a),R(p0,r0,b),R(p1,r1,b),R(p1,r1,a),col); }
+}
 function accCone(G,c,y0,y1,r,col,seg){
   seg=seg||12; var ap=[c[0],y1,c[2]];
   for(var i=0;i<seg;i++){ var a=i/seg*6.2832,b=(i+1)/seg*6.2832;
@@ -11636,10 +11714,12 @@ function accHeadGeo(M,L,hairCol){
       return front(az)?yy>cy+0.36*ry:yy>cy-(hat==="coif"?0.95:0.55)*ry; },kc);
   }
   if(hat==="veil"){
+    var vc=L.veilCol||ACC_LINEN;
     accShell(G,c,R(1.17),function(az,el){ var yy=y(el,1.17);
-      return Math.abs(az)<0.75?yy>cy+0.34*ry:yy>cy-1.05*ry; },ACC_LINEN);
-    accBox(G,[c[0],cy-1.05*ry,c[2]-r[2]*1.02],[r[0]*1.05,ry*0.62,r[2]*0.10],ACC_LINEN);
+      return Math.abs(az)<0.75?yy>cy+0.34*ry:yy>cy-1.05*ry; },vc);
+    accBox(G,[c[0],cy-1.05*ry,c[2]-r[2]*1.02],[r[0]*1.05,ry*0.62,r[2]*0.10],vc);
   }
+  if(hat==="zucchetto")accShell(G,c,R(1.12),function(az,el){ return y(el,1.12)>cy+0.58*ry; },ROBE_BLACK);
   if(hat==="hood"){
     accShell(G,c,R(1.22),function(az,el){ var yy=y(el,1.22);
       return Math.abs(az)<0.80?yy>cy+0.30*ry:yy>cy-1.20*ry; },L.woolCol);
@@ -11674,36 +11754,85 @@ function accHeadGeo(M,L,hairCol){
 /* over the tunic: belt and purse, apron, cloak, the watch's tabard. The
    front pieces stand off by the belly this build pushes out. */
 function accBodyGeo(M,L,build){
-  var Gp=[], Gc=[], F=M.front, Bk=M.back, S=M.side;
+  var Gp=[], Gc=[], F=M.front, Bk=M.back, S=M.side, arms={};
   var push=Math.max(0,build||0)*GLB_FAT_MAX*1.55, pushS=Math.max(0,build||0)*GLB_FAT_MAX*0.9;
-  var wy=M.waistY-0.03, hy=M.hipY, sy=M.shoulderY;
-  if(L.belt){
-    var cz=(F+Bk)/2, rx=S+0.015+pushS, rz=(F-Bk)/2+0.015+push*0.55;
-    accDrum(Gp,[0,0,cz+push*0.35],wy-0.035,wy+0.012,[rx,rz],ACC_LEATHER,14,false);
-    accBox(Gp,[S*0.72+pushS,wy-0.09,F*0.35+push*0.4],[0.035,0.05,0.022],[92,62,40]);
-  }
-  if(L.apron){
-    var az=F+0.025+push, w=S*0.82+pushS*0.6;
-    accQuad(Gp,[-w,wy+0.01,az],[w,wy+0.01,az],[w*1.08,hy-0.20,az+0.10],[-w*1.08,hy-0.20,az+0.10],ACC_LINEN,true);
-  }
-  if(L.cloak){
-    /* a drape, not a board: an arc round the back and shoulders that
-       flares and falls away behind the calves, so a stride clears it */
-    var czc=(F+Bk)/2, rT=[S*1.18+pushS,(F-Bk)/2+0.035+push*0.3], rB=[S*1.55+pushS,(F-Bk)/2+0.20+push*0.3];
-    var zB=czc-0.10, seg=7, a0=1.85, a1=4.43;          /* from one shoulder round the back to the other */
-    for(var ci=0;ci<seg;ci++){
-      var ta=a0+(a1-a0)*ci/seg, tb=a0+(a1-a0)*(ci+1)/seg;
+  var wy=M.waistY-0.03, hy=M.hipY, sy=M.shoulderY, czc=(F+Bk)/2, dz=(F-Bk)/2;
+  var up=L.up||null, cloth=up||L.woolCol;
+  /* a skirt: knee-length on a coat, to the ankle on a gown or a robe --
+     a bell off the hips wide enough at the hem to hold a stride */
+  if(L.gown||L.cote){
+    var hemY=L.gown?0.07:0.50, rb=L.gown?[0.35+pushS,0.37+push*0.3]:[0.27+pushS,0.29+push*0.3];
+    var col=L.gown?(L.lo||cloth):(up||L.woolCol), seg=14;
+    var r0=[S+0.020+pushS,dz+0.028+push*0.55], r1=[S+0.055+pushS,dz+0.060+push*0.45];
+    var z0=czc+push*0.3, y1=hy-0.06;
+    for(var i=0;i<seg;i++){ var ta=i/seg*6.2832, tb=(i+1)/seg*6.2832;
       var pt=function(t,r,yy,zc){return [Math.sin(t)*r[0],yy,zc+Math.cos(t)*r[1]];};
-      accQuad(Gc,pt(ta,rT,sy+0.01,czc),pt(tb,rT,sy+0.01,czc),pt(tb,rB,0.36,zB),pt(ta,rB,0.36,zB),L.woolCol,true);
+      accQuad(Gp,pt(ta,r0,wy+0.02,z0),pt(tb,r0,wy+0.02,z0),pt(tb,r1,y1,z0),pt(ta,r1,y1,z0),col,true);
+      accQuad(Gp,pt(ta,r1,y1,z0),pt(tb,r1,y1,z0),pt(tb,rb,hemY,czc-0.02),pt(ta,rb,hemY,czc-0.02),col,true);
+    }
+    if(L.hem&&!L.gown){                        /* a coloured border at the hem */
+      for(i=0;i<seg;i++){ ta=i/seg*6.2832; tb=(i+1)/seg*6.2832;
+        var rh=[rb[0]+0.004,rb[1]+0.004], yh=hemY+0.06, rh2=[rb[0]*0.93+r1[0]*0.07+0.004,rb[1]*0.93+r1[1]*0.07+0.004];
+        accQuad(Gp,[Math.sin(ta)*rh2[0],yh,czc-0.02+Math.cos(ta)*rh2[1]],[Math.sin(tb)*rh2[0],yh,czc-0.02+Math.cos(tb)*rh2[1]],
+                   [Math.sin(tb)*rh[0],hemY,czc-0.02+Math.cos(tb)*rh[1]],[Math.sin(ta)*rh[0],hemY,czc-0.02+Math.cos(ta)*rh[1]],L.hem,true); }
     }
   }
+  if(L.belt){
+    var rx=S+0.015+pushS, rz=dz+0.015+push*0.55;
+    if(L.gown||L.cote){rx+=0.012;rz+=0.012;}
+    accDrum(Gp,[0,0,czc+push*0.35],wy-0.035,wy+0.012,[rx,rz],L.beltCol||ACC_LEATHER,14,false);
+    if(!L.beltCol)accBox(Gp,[S*0.72+pushS,wy-0.09,F*0.35+push*0.4],[0.035,0.05,0.022],[92,62,40]);
+    else accBox(Gp,[S*0.35,wy-0.20,F+0.03+push],[0.012,0.16,0.012],L.beltCol);   /* the rope's end */
+  }
+  if(L.apron){
+    var az=F+0.025+push+(L.gown?0.02:0), w=S*0.82+pushS*0.6, ab=L.gown?0.30:hy-0.20;
+    accQuad(Gp,[-w,wy+0.01,az],[w,wy+0.01,az],[w*1.08,ab,az+0.10],[-w*1.08,ab,az+0.10],ACC_LINEN,true);
+  }
+  /* a jerkin: sleeveless, laced, over the tunic from shoulder to hip */
+  if(L.vest){
+    /* wrapped round the torso like the cloth it is, chest to hip, not four boards */
+    var vt=sy-0.03, vbot=hy-0.02, rv0=[S*0.92+pushS*0.7,dz+0.020+push*0.45], rv1=[S+0.012+pushS,dz+0.030+push*0.6];
+    for(var vi=0;vi<14;vi++){ var va=vi/14*6.2832, vb2=(vi+1)/14*6.2832;
+      var pv=function(t,r,yy){return [Math.sin(t)*r[0],yy,czc+push*0.25+Math.cos(t)*r[1]];};
+      accQuad(Gc,pv(va,rv0,vt),pv(vb2,rv0,vt),pv(vb2,rv1,vbot),pv(va,rv1,vbot),L.vest,true); }
+  }
+  if(L.cloak){
+    var rT=[S*1.18+pushS,dz+0.035+push*0.3], rB=[S*1.55+pushS,dz+0.20+push*0.3];
+    var zB=czc-0.10, sg=7, a0=1.85, a1=4.43;
+    for(var ci=0;ci<sg;ci++){
+      var ca=a0+(a1-a0)*ci/sg, cb=a0+(a1-a0)*(ci+1)/sg;
+      var pc=function(t,r,yy,zc){return [Math.sin(t)*r[0],yy,zc+Math.cos(t)*r[1]];};
+      accQuad(Gc,pc(ca,rT,sy+0.01,czc),pc(cb,rT,sy+0.01,czc),pc(cb,rB,0.36,zB),pc(ca,rB,0.36,zB),L.woolCol,true);
+    }
+  }
+  /* a shoulder mantle -- fur on an elder, wool under a hood */
+  if(L.mantle){
+    var nr=M.NK?[M.NK.r[0]+0.02,M.NK.r[2]+0.02]:[0.08,0.08], mz=M.NK?M.NK.c[2]:czc;
+    var mr=[S+0.13+pushS,dz+0.11+push*0.4];
+    for(var mi=0;mi<14;mi++){ var ma=mi/14*6.2832, mb=(mi+1)/14*6.2832;
+      var pm=function(t,r,yy,zc){return [Math.sin(t)*r[0],yy,zc+Math.cos(t)*r[1]];};
+      accQuad(Gc,pm(ma,nr,sy+0.05,mz),pm(mb,nr,sy+0.05,mz),pm(mb,mr,sy-0.17,czc),pm(ma,mr,sy-0.17,czc),L.mantle,true); }
+  }
+  if(L.collar&&M.NK)accDrum(Gc,[M.NK.c[0],0,M.NK.c[2]],M.NK.lo[1]+0.005,M.NK.lo[1]+0.035,[M.NK.r[0]+0.012,M.NK.r[2]+0.012],[232,228,220],12,false);
+  if(L.sack)accBox(Gc,[0,M.C.c[1]-0.04,Bk-0.12-push*0.3],[0.15,0.17,0.10],ACC_BURLAP);
   if(L.tabard){
     var tf=F+0.022+push, tb=Bk-0.022-push*0.3, w3=S*0.80+pushS*0.6, top=sy-0.08, bot=hy-0.12;
     accQuad(Gc,[-w3,top,tf],[w3,top,tf],[w3,bot,tf+0.12],[-w3,bot,tf+0.12],ACC_TABARD,true);
     accQuad(Gc,[w3,top,tb],[-w3,top,tb],[-w3,bot,tb-0.12],[w3,bot,tb-0.12],ACC_TABARD,true);
     accQuad(Gc,[-w3*0.22,top-0.02,tf+0.003],[w3*0.22,top-0.02,tf+0.003],[w3*0.22,bot+0.02,tf+0.123],[-w3*0.22,bot+0.02,tf+0.123],[214,178,82],false);
   }
-  return {pelvis:Gp,chest:Gc};
+  /* sleeves to the wrist, wide at the cuff on a robe */
+  if(L.sleeves&&M.arm.ual&&M.arm.lal&&M.arm.hl&&M.arm.uar&&M.arm.lar&&M.arm.hr){
+    var sc=cloth, fa=Math.max(0,build||0)*GLB_FAT_MAX*0.55, cuff=(L.sleeves===2?0.085:0.047);
+    [["ual","lal","hl"],["uar","lar","hr"]].forEach(function(k){
+      var U=M.arm[k[0]],Lo=M.arm[k[1]],Hd=M.arm[k[2]], g1=[], g2=[];
+      accTube(g1,U.p,Lo.p,0.064+fa,0.054+fa*0.6,sc,8);
+      var wr=[Lo.p[0]+(Hd.p[0]-Lo.p[0])*0.94,Lo.p[1]+(Hd.p[1]-Lo.p[1])*0.94,Lo.p[2]+(Hd.p[2]-Lo.p[2])*0.94];
+      accTube(g2,Lo.p,wr,0.056+fa*0.5,cuff,sc,8);
+      arms[k[0]]={j:U.j,G:g1}; arms[k[1]]={j:Lo.j,G:g2};
+    });
+  }
+  return {pelvis:Gp,chest:Gc,arms:arms};
 }
 /* ride a bone: bind space -> this pose -> this person's height -> the town */
 function accEmit(op,ch,posed,G,joint,x,z,gy,hx,hz,LOOK,tile){
@@ -11720,19 +11849,32 @@ function accEmit(op,ch,posed,G,joint,x,z,gy,hx,hz,LOOK,tile){
              m:1, tile:(f.c===ACC_STEEL||f.c[0]===118?TILE.STONE:(f.c===ACC_STRAW?TILE.THATCH:tile)), ao:1, glb:1});
   }
 }
-function glbAccessories(op,ch,posed,x,z,gy,hx,hz,uid,build,guard,hasHelm){
-  var M=accMeasure(ch); if(!M)return;
-  var L=accLook(uid,!!ch._female,guard); if(hasHelm)L.hat=null;
-  var LOOK=glbLook(uid), hairCol=LOOK.hair;
+function glbAccessories(op,ch,posed,x,z,gy,hx,hz,uid,build,L,hasHelm){
+  var M=accMeasure(ch); if(!M||!L)return;
+  if(hasHelm)L=Object.assign({},L,{hat:null});
+  var LOOK=glbLook(uid), hairCol=L.hairCol||LOOK.hair;
   if(!ch._accCache)ch._accCache={};
-  var hk="h|"+L.hair+"|"+L.beard+"|"+L.hat+"|"+hairCol+"|"+(L.hatCol||"")+"|"+(L.woolCol||"");
+  var ks=function(v){return v?String(v):"-";};
+  var hk="h|"+L.hair+"|"+L.beard+"|"+L.hat+"|"+hairCol+"|"+ks(L.hatCol)+"|"+ks(L.woolCol)+"|"+ks(L.veilCol);
   var hg=ch._accCache[hk]||(ch._accCache[hk]=accHeadGeo(M,L,hairCol));
   var bq=Math.round((build||0)*10)/10;
-  var bk="b|"+(L.belt?1:0)+(L.apron?1:0)+(L.cloak?1:0)+(L.tabard?1:0)+"|"+bq+"|"+(L.woolCol||"");
+  var bk="b|"+[L.belt,L.apron,L.cloak,L.tabard,L.gown,L.cote,L.sleeves,L.sack,L.collar].map(function(v){return v?1:0;}).join("")+
+         "|"+bq+"|"+ks(L.woolCol)+"|"+ks(L.up)+"|"+ks(L.lo)+"|"+ks(L.vest)+"|"+ks(L.hem)+"|"+ks(L.mantle)+"|"+ks(L.beltCol)+"|"+(L.sleeves||0);
   var bg=ch._accCache[bk]||(ch._accCache[bk]=accBodyGeo(M,L,bq));
   accEmit(op,ch,posed,hg,M.B.head,x,z,gy,hx,hz,LOOK,TILE.CLOTH);
   accEmit(op,ch,posed,bg.pelvis,M.B.pelvis,x,z,gy,hx,hz,LOOK,TILE.CLOTH);
   accEmit(op,ch,posed,bg.chest,M.B.spine1>=0?M.B.spine1:M.B.chest,x,z,gy,hx,hz,LOOK,TILE.CLOTH);
+  for(var k in bg.arms)accEmit(op,ch,posed,bg.arms[k].G,bg.arms[k].j,x,z,gy,hx,hz,LOOK,TILE.CLOTH);
+}
+/* the lowest edge of this body's tunic in the bind pose, so a trim can
+   run round the hem */
+function glbHemY(ch){
+  var prim=ch.meshes[0][0]; if(prim._hemY!==undefined)return prim._hemY;
+  var PK=null; try{ PK=glbParts(ch).kind; }catch(e){}
+  var lo=1e9, idx=prim.indices;
+  if(PK)for(var k=0,ti=0;k+2<idx.length;k+=3,ti++){ if(PK[ti]!==3)continue;
+    for(var q=0;q<3;q++){ var yy=prim.pos[idx[k+q]*3+1]; if(yy<lo)lo=yy; } }
+  prim._hemY=(lo<1e9)?lo+0.07:-1e9; return prim._hemY;
 }
 function glbDrawFigure(op,which,x,z,gy,hx,hz,walkT,gaitAmp,weapon,uid,kid,helm,subj){
   var ch=GLB_IMPORTED[which]; if(!ch||!ch.skins||!ch.skins.length)return false;
@@ -11756,10 +11898,11 @@ function glbDrawFigure(op,which,x,z,gy,hx,hz,walkT,gaitAmp,weapon,uid,kid,helm,s
   var posed=glbPosed(useKey,useCh,clip,t,kid);
   /* townsfolk and the watch have a build; the player, children and beasts
      are drawn as they come */
-  var build=0, isGuard=!!(subj&&G&&G.guards&&G.guards.indexOf(subj)>=0);
-  if(subj&&!kid)build=glbBuild(uid,isGuard);
-  glbPlace(op,useCh,posed,x,z,gy,hx,hz,uid,build);
-  if(subj&&!kid){ try{ glbAccessories(op,useCh,posed,x,z,gy,hx,hz,uid,build,isGuard,!!helm); }
+  var build=0, isGuard=!!(subj&&G&&G.guards&&G.guards.indexOf(subj)>=0), dress=null;
+  if(subj&&!kid){ build=glbBuild(uid,isGuard);
+    try{ dress=accLook(uid,!!useCh._female,isGuard,subj.garb); }catch(e){ dress=null; } }
+  glbPlace(op,useCh,posed,x,z,gy,hx,hz,uid,build,dress);
+  if(dress){ try{ glbAccessories(op,useCh,posed,x,z,gy,hx,hz,uid,build,dress,!!helm); }
                   catch(e){ if(!GLB_ACC_ERR){GLB_ACC_ERR=1;trace("ACC: "+(e&&e.message));} } }
   /* a child carries nothing, and the grip offsets are adult-sized anyway.
      Props hang off the full skeleton's matrices, which the cheap copy
