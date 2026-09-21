@@ -253,7 +253,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.029</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.030</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -4410,8 +4410,16 @@ function prop(x,z,w,d,tag){PROPS.push({x:x,z:z,w:w,d:d,tag:tag});}
    it by a no-collision escape that also let him phase through houses on the
    way home. One prop, named, that one mover may occupy. */
 var BLOCK_IGNORE=null;
+/* The watch stood flush to walls with half a shield and a shoulder in the
+   stone: the walking pad is 0.48 but a watchman is his body (about 0.55
+   across the middle) plus a shield out on his arm and a tabard, so at the
+   closest the pad allows, all of that is drawn inside the wall. Every step
+   a watchman takes is now taken with his own wider clearance; the planner
+   and everyone else keep the ordinary pad. A watchman already standing
+   too close is walked out by slideTo's own way out of a footprint. */
+var BLOCK_PAD=0, GUARD_PAD=0.74;
 function blockedAt(x,z,pad){
-  pad=(pad===undefined)?0.48:pad;
+  pad=(pad===undefined)?(BLOCK_PAD||0.48):pad;
   var i;
   for(i=0;i<B.length;i++){
     var b=B[i];
@@ -4450,6 +4458,12 @@ function safeFraction(ox,oz,nx,nz){
   return lo;
 }
 function slideTo(o,nx,nz){
+  var pp=(o&&o.patrol!==undefined)?GUARD_PAD:0;
+  if(!pp)return slideTo0(o,nx,nz);
+  var was=BLOCK_PAD; BLOCK_PAD=pp;
+  try{ return slideTo0(o,nx,nz); } finally { BLOCK_PAD=was; }
+}
+function slideTo0(o,nx,nz){
   /* if they are already inside something, walk them OUT toward the nearest
      clear ground rather than to an arbitrary target. The old version just
      teleported to (nx,nz) every frame this was true -- fine for the one
@@ -11597,7 +11611,8 @@ function accMeasure(ch){
   var J=skin.joints, byName={}, j;
   for(j=0;j<J.length;j++){ var nm=((ch.nodes[J[j]]||{}).name||"").toLowerCase(); if(nm)byName[nm]=j; }
   function jn(name,idx){ return byName[name]!==undefined?byName[name]:(J.length===65?idx:-1); }
-  var B={head:jn("head",6),pelvis:jn("pelvis",1),spine1:jn("spine_01",2),chest:jn("spine_03",4)};
+  var B={head:jn("head",6),pelvis:jn("pelvis",1),spine1:jn("spine_01",2),chest:jn("spine_03",4),
+         thighL:jn("thigh_l",55),thighR:jn("thigh_r",60)};
   if(B.head<0||B.pelvis<0||B.chest<0)return null;
   function box(ji,th){
     var lo=[1e9,1e9,1e9],hi=[-1e9,-1e9,-1e9],n=0;
@@ -11630,6 +11645,24 @@ function accTri(G,a,b,c,col){
   G.push({v:[a,b,c],n:[nx/l,ny/l,nz/l],c:col});
 }
 function accQuad(G,a,b,c,d,col,two){ accTri(G,a,b,c,col); accTri(G,a,c,d,col); if(two){accTri(G,a,c,b,col);accTri(G,a,d,c,col);} }
+/* Cloth below the hips cannot ride the hips alone: the legs swing through
+   it. A skirt was a rigid bell on the pelvis, so every stride put a knee
+   and a shin out through the front of it. Each vertex now shares itself
+   between the bone it hangs from and the two thighs -- none at the waist,
+   all of it at the hem, the left half with the left leg and the right
+   with the right -- so the hem is carried forward by whichever leg is
+   stepping, the way cloth is. */
+function accLegs(G,M,topJ,topY,hemY){
+  if(M.B.thighL<0||M.B.thighR<0)return;
+  var span=Math.max(0.05,topY-hemY);
+  for(var i=0;i<G.length;i++){ var f=G[i]; if(f.sk)continue;
+    var sk=[], any=false;
+    for(var q=0;q<3;q++){ var v=f.v[q];
+      var t=Math.max(0,Math.min(1,(topY-v[1])/span)); t=t*t*(3-2*t);
+      var wl=Math.max(0,Math.min(1,0.5+v[0]/0.16));
+      sk.push([topJ,1-t,M.B.thighL,t*wl,M.B.thighR,t*(1-wl)]); if(t>0)any=true; }
+    if(any)f.sk=sk; }
+}
 /* a cap of an ellipsoid round centre c with radii r, kept where keep(az,el)
    says -- az 0 is straight ahead (+Z), el is up from the equator */
 function accShell(G,c,r,keep,col,segA,segE){
@@ -11770,6 +11803,7 @@ function accBodyGeo(M,L,build){
       accQuad(Gp,pt(ta,r0,wy+0.02,z0),pt(tb,r0,wy+0.02,z0),pt(tb,r1,y1,z0),pt(ta,r1,y1,z0),col,true);
       accQuad(Gp,pt(ta,r1,y1,z0),pt(tb,r1,y1,z0),pt(tb,rb,hemY,czc-0.02),pt(ta,rb,hemY,czc-0.02),col,true);
     }
+    accLegs(Gp,M,M.B.pelvis,M.hipY+0.02,hemY);
     if(L.hem&&!L.gown){                        /* a coloured border at the hem */
       for(i=0;i<seg;i++){ ta=i/seg*6.2832; tb=(i+1)/seg*6.2832;
         var rh=[rb[0]+0.004,rb[1]+0.004], yh=hemY+0.06, rh2=[rb[0]*0.93+r1[0]*0.07+0.004,rb[1]*0.93+r1[1]*0.07+0.004];
@@ -11786,7 +11820,10 @@ function accBodyGeo(M,L,build){
   }
   if(L.apron){
     var az=F+0.025+push+(L.gown?0.02:0), w=S*0.82+pushS*0.6, ab=L.gown?0.30:hy-0.20;
-    accQuad(Gp,[-w,wy+0.01,az],[w,wy+0.01,az],[w*1.08,ab,az+0.10],[-w*1.08,ab,az+0.10],ACC_LINEN,true);
+    var Ga=[];
+    accQuad(Ga,[-w,wy+0.01,az],[w,wy+0.01,az],[w*1.08,ab,az+0.10],[-w*1.08,ab,az+0.10],ACC_LINEN,true);
+    accLegs(Ga,M,M.B.pelvis,hy+0.02,ab);
+    for(var ai=0;ai<Ga.length;ai++)Gp.push(Ga[ai]);
   }
   /* a jerkin: sleeveless, laced, over the tunic from shoulder to hip */
   if(L.vest){
@@ -11804,6 +11841,7 @@ function accBodyGeo(M,L,build){
       var pc=function(t,r,yy,zc){return [Math.sin(t)*r[0],yy,zc+Math.cos(t)*r[1]];};
       accQuad(Gc,pc(ca,rT,sy+0.01,czc),pc(cb,rT,sy+0.01,czc),pc(cb,rB,0.36,zB),pc(ca,rB,0.36,zB),L.woolCol,true);
     }
+    accLegs(Gc,M,M.B.spine1>=0?M.B.spine1:M.B.chest,hy,0.36);
   }
   /* a shoulder mantle -- fur on an elder, wool under a hood */
   if(L.mantle){
@@ -11838,14 +11876,25 @@ function accBodyGeo(M,L,build){
 function accEmit(op,ch,posed,G,joint,x,z,gy,hx,hz,LOOK,tile){
   if(!G||!G.length)return;
   var skin=ch.skins[0], Mj=mat4mulRT(posed.W[skin.joints[joint]],skin.inverseBind.slice(joint*16,joint*16+16));
+  var MC={}; MC[joint]=Mj;
+  function MJ(j){ return MC[j]||(MC[j]=mat4mulRT(posed.W[skin.joints[j]],skin.inverseBind.slice(j*16,j*16+16))); }
   var hl=Math.hypot(hx,hz)||1; hx/=hl; hz/=hl; var rx=hz, rz=-hx, g=LOOK.girth, t=LOOK.tall;
   function P(p){ var X=(Mj[0]*p[0]+Mj[4]*p[1]+Mj[8]*p[2]+Mj[12])*g, Y=(Mj[1]*p[0]+Mj[5]*p[1]+Mj[9]*p[2]+Mj[13])*t,
                      Z=(Mj[2]*p[0]+Mj[6]*p[1]+Mj[10]*p[2]+Mj[14])*g;
     return [x+rx*X+hx*Z, gy+Y, z+rz*X+hz*Z]; }
+  function PB(p,sk){ var X=0,Y=0,Zz=0;
+    for(var k=0;k<6;k+=2){ var w=sk[k+1]; if(w<=0)continue; var A=MJ(sk[k]);
+      X+=(A[0]*p[0]+A[4]*p[1]+A[8]*p[2]+A[12])*w; Y+=(A[1]*p[0]+A[5]*p[1]+A[9]*p[2]+A[13])*w; Zz+=(A[2]*p[0]+A[6]*p[1]+A[10]*p[2]+A[14])*w; }
+    X*=g; Y*=t; Zz*=g; return [x+rx*X+hx*Zz, gy+Y, z+rz*X+hz*Zz]; }
   for(var i=0;i<G.length;i++){
     var f=G[i], n=f.n, nx=Mj[0]*n[0]+Mj[4]*n[1]+Mj[8]*n[2], ny=Mj[1]*n[0]+Mj[5]*n[1]+Mj[9]*n[2], nz=Mj[2]*n[0]+Mj[6]*n[1]+Mj[10]*n[2];
     var wx=rx*nx+hx*nz, wz=rz*nx+hz*nz;
-    op.push({p:[P(f.v[0]),P(f.v[1]),P(f.v[2])], n:[wx,ny,wz,wx,ny,wz,wx,ny,wz], c:f.c, vc:null,
+    var pts=f.sk?[PB(f.v[0],f.sk[0]),PB(f.v[1],f.sk[1]),PB(f.v[2],f.sk[2])]:[P(f.v[0]),P(f.v[1]),P(f.v[2])];
+    if(f.sk){ /* the swung cloth faces a new way: take its normal from where it now is */
+      var ux=pts[1][0]-pts[0][0],uy=pts[1][1]-pts[0][1],uz=pts[1][2]-pts[0][2],vx=pts[2][0]-pts[0][0],vy=pts[2][1]-pts[0][1],vz=pts[2][2]-pts[0][2];
+      var cx2=uy*vz-uz*vy, cy2=uz*vx-ux*vz, cz2=ux*vy-uy*vx, cl=Math.hypot(cx2,cy2,cz2);
+      if(cl>1e-9){ wx=cx2/cl; ny=cy2/cl; wz=cz2/cl; } }
+    op.push({p:pts, n:[wx,ny,wz,wx,ny,wz,wx,ny,wz], c:f.c, vc:null,
              m:1, tile:(f.c===ACC_STEEL||f.c[0]===118?TILE.STONE:(f.c===ACC_STRAW?TILE.THATCH:tile)), ao:1, glb:1});
   }
 }
