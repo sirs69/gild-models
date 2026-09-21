@@ -212,8 +212,12 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <button id="hcb">High contrast</button>
     <button id="inkb">Ink: off</button>
     <button id="cheat" style="display:none">Test</button>
-    <button onclick="toggleTrace()">Trace</button>
   </div>
+  <button id="tracetab" onclick="toggleTrace()" aria-label="What the game did"
+    style="position:fixed;right:0;bottom:0;z-index:9997;opacity:.42;
+    padding:9px 11px calc(9px + env(safe-area-inset-bottom,0px));
+    background:#15120e;color:#e8dcc4;border:1px solid #4a3d28;border-right:0;border-bottom:0;
+    font:11px/1 ui-monospace,monospace;letter-spacing:.5px">trace</button>
   <div id="cheatbox"></div>
 
   <!-- ══ START ══ -->
@@ -221,7 +225,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.021</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.023</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -4070,7 +4074,13 @@ function goTo(x,z){
    backdrop rather than somewhere you are standing. */
 var PROPS=[];
 var STALLS=[];   /* every market stall drawn, in the order drawn — the sellers key off it */
-function prop(x,z,w,d){PROPS.push({x:x,z:z,w:w,d:d});}
+function prop(x,z,w,d,tag){PROPS.push({x:x,z:z,w:w,d:d,tag:tag});}
+/* A stallholder cannot be kept out of his own stall: the seat behind his
+   counter is inside the stall's own collision box, and with no way to stand
+   there he either leaned on the front of it for good or was walked through
+   it by a no-collision escape that also let him phase through houses on the
+   way home. One prop, named, that one mover may occupy. */
+var BLOCK_IGNORE=null;
 function blockedAt(x,z,pad){
   pad=(pad===undefined)?0.48:pad;
   var i;
@@ -4081,6 +4091,7 @@ function blockedAt(x,z,pad){
   }
   for(i=0;i<PROPS.length;i++){
     var q2=PROPS[i];
+    if(BLOCK_IGNORE&&q2.tag===BLOCK_IGNORE)continue;
     if(Math.abs(x-q2.x)<q2.w/2+pad&&Math.abs(z-q2.z)<q2.d/2+pad)return true;
   }
   return false;
@@ -4221,7 +4232,12 @@ var VEND_OPEN=5.6, VEND_SHUT=18.6;
 function vendorsOpen(){return G.t>=VEND_OPEN&&G.t<VEND_SHUT;}
 /* the pitch: in front of the board, out where a customer would meet
    them, rather than tucked in behind it */
-function vendorSeat(st){return [st.x+0.10,st.z+1.15];}
+/* z+1.15 stood him 0.46 BEHIND the stall's back posts, outside his own
+   awning, with hz=+1 turning him away from his counter — a man selling to
+   the empty ground at his back. The counter runs at z-0.30 and the back
+   board at z+0.65, so the place a stallholder stands is between the two,
+   under the awning, facing the square. */
+function vendorSeat(st){return [st.x+0.10,st.z+0.34];}
 function syncVendors(){
   if(!G||!STALLS.length)return;
   if(!G.vendors)G.vendors=[];
@@ -4247,6 +4263,9 @@ function stepVendors(dt){
   var open=vendorsOpen();
   for(var i=0;i<G.vendors.length;i++){
     var v=G.vendors[i], st=STALLS[v.vendor]; if(!st)continue;
+    /* everything this man does this tick is done with his own stall open to
+       him and every other wall in the town solid */
+    BLOCK_IGNORE="stall"+v.vendor;
     var home=null; for(var j=0;j<B.length;j++)if(B[j].id===v.home){home=B[j];break;}
     if(!home)continue;
     var seat=vendorSeat(st);
@@ -4255,7 +4274,7 @@ function stepVendors(dt){
       v.state="toStall"; v.x=home.dx; v.z=home.dz; v.tx=seat[0]; v.tz=seat[1]; v.leg=null; v.pose=0;
       v.hurry=true;                         /* always late, always running */
     } else if(v.state==="at"){
-      v.pose=0; v.hx=0; v.hz=1; v.gaitAmp=0; v.x=seat[0]; v.z=seat[1];
+      v.pose=0; v.hx=0; v.hz=-1; v.gaitAmp=0; v.x=seat[0]; v.z=seat[1];
       if(open)continue;
       v.state="toHome"; v.tx=home.dx; v.tz=home.dz; v.leg=null; v.pose=0; v.hurry=true;
     }
@@ -4263,7 +4282,7 @@ function stepVendors(dt){
     var ex=v.tx-v.x, ez=v.tz-v.z, ed=Math.hypot(ex,ez);
     if(ed<0.45){
       if(v.state==="toHome"){v.state="home";v.hurry=false;v.gaitAmp=0;}
-      else{v.state="at";v.hurry=false;v.x=seat[0];v.z=seat[1];v.pose=0;v.gaitAmp=0;v.hx=0;v.hz=1;}
+      else{v.state="at";v.hurry=false;v.x=seat[0];v.z=seat[1];v.pose=0;v.gaitAmp=0;v.hx=0;v.hz=-1;}
       continue;
     }
     /* no progress means the way is blocked whatever the leg says: lay it again */
@@ -4292,12 +4311,21 @@ function stepVendors(dt){
     } else wp=(ed<2.4)?[v.tx,v.tz]:walkerAdvance(v);
     var lx=wp[0]-v.x, lz=wp[1]-v.z, ld=Math.hypot(lx,lz)||1;
     var amt=v.sp*(v.hurry?1.9:1)*dt;
-    /* the seat is inside the stall's own footprint and the door is against
-       the house, so the last stretch is walked straight, not slid */
-    if(ed<2.4||!slideTo(v,v.x+lx/ld*amt,v.z+lz/ld*amt)){v.x+=lx/ld*amt;v.z+=lz/ld*amt;}
-    v.hx=lx/ld; v.hz=lz/ld; v.walkT=(v.walkT||0)+amt;
-    v.gaitAmp=(v.gaitAmp||0)+((v.hurry?1.35:1)-(v.gaitAmp||0))*Math.min(1,dt*8);
+    /* This used to walk the last 2.4 units with collision switched off, so
+       a stallholder crossed his own counter and, on the way home, the front
+       wall of his house. The exemption above is the one thing he may walk
+       into; a blocked step now simply does not happen and the stuck timer
+       lays a new leg round whatever it was. */
+    if(slideTo(v,v.x+lx/ld*amt,v.z+lz/ld*amt)){
+      v.hx=lx/ld; v.hz=lz/ld; v.walkT=(v.walkT||0)+amt;
+      v.gaitAmp=(v.gaitAmp||0)+((v.hurry?1.35:1)-(v.gaitAmp||0))*Math.min(1,dt*8);
+    } else {
+      v.hx=lx/ld; v.hz=lz/ld;
+      v.stuckT=(v.stuckT||0)+1;
+    }
+    BLOCK_IGNORE=null;
   }
+  BLOCK_IGNORE=null;
 }
 function vendorLine(v){
   var st=STALLS[v.vendor]||{kind:0};
@@ -7892,7 +7920,7 @@ function buildGeo(){
     if(onStreetProper(stalls[i][1],stalls[i][2]))continue;
     CURY=standH(stalls[i][1],stalls[i][2]);
     stallG(stalls[i][1],stalls[i][2],stalls[i][0],i);
-    prop(stalls[i][1],stalls[i][2],2.1,1.6);
+    prop(stalls[i][1],stalls[i][2],2.1,1.6,"stall"+(STALLS.length-1));
   }
   CURY=0;
   lampG(-6.2,5.6);
@@ -13040,6 +13068,146 @@ function nearest(){
   }
   return bd<4.2?best:null;
 }
+/* ══ THE WATCHDOG ═════════════════════════════════════════════════════
+   Reading code and guessing is how most of the bad builds happened: a
+   theory gets shipped, it is wrong, and two versions go on undoing it.
+   The game is the only thing that can actually observe itself, so it
+   does. Once a second it checks a handful of cheap invariants and, the
+   FIRST time each one trips, writes down the day, the hour, where you
+   were and the numbers involved.
+
+   Rules it follows, so it never becomes another thing that breaks:
+     - first occurrence only, so one runaway cannot fill the log
+     - never throws: every probe is wrapped, a broken probe is skipped
+     - never changes the game: it reads, it does not touch
+     - costs a fraction of a millisecond, once a second
+
+   WATCHLOG is what to send back. It is the difference between "it got
+   slow" and "at day 31 frame time went from 18ms to 210ms while faces
+   went 61,000 -> 64,000 and npcs went 88 -> 91", which names the culprit
+   without anybody having to guess.                                      */
+var WATCHLOG=[], WATCHSEEN={}, WATCHT=0, WATCHBASE=null, WATCHON=true;
+function watchNote(key,msg,extra){
+  if(WATCHSEEN[key])return;
+  WATCHSEEN[key]=1;
+  var where=G?(inRoom()?("indoors:"+G.scene):("town "+(playerTown?playerTown():0)+
+             " at "+Math.round(G.px)+","+Math.round(G.pz))):"-";
+  var line="d"+(G?G.day:"-")+" "+(G?String(Math.floor(G.t)).padStart(2,"0"):"--")+"h  "+
+           msg+"   ["+where+"]"+(extra?"  "+extra:"");
+  WATCHLOG.push(line);
+  if(WATCHLOG.length>60)WATCHLOG.shift();
+  if(typeof trace==="function")trace("WATCH: "+msg);
+}
+function watchSnapshot(){
+  return {
+    npcs:(G.npcs||[]).length, guards:(G.guards||[]).length, road:(G.road||[]).length,
+    corpses:(G.corpses||[]).length, fam:(G.fam||[]).length, robbers:(G.robbers||[]).length,
+    fires:(G.fires||[]).length, prisoners:(G.prisoners||[]).length,
+    vendors:(G.vendors||[]).length, workers:(G.workerNpcs||[]).length,
+    carters:(G.carterNpcs||[]).length, thugs:(G.thugNpcs||[]).length,
+    thieves:(G.thiefNpcs||[]).length, conduits:(G.conduits||[]).length,
+    shops:(G.shops||[]).length, built:(G.built||[]).length,
+    buildings:(typeof B!=="undefined"&&B)?B.length:0,
+    props:(typeof PROPS!=="undefined"&&PROPS)?PROPS.length:0,
+    geo:(typeof GEO!=="undefined"&&GEO)?GEO.length:0,
+    poseCache:(typeof GLB_POSE_CACHE!=="undefined")?Object.keys(GLB_POSE_CACHE).length:0,
+    faces:LASTFACES||0
+  };
+}
+function watchTick(dt){
+  if(!WATCHON||!G||G.over)return;
+  WATCHT+=dt; if(WATCHT<1)return; WATCHT=0;
+  try{
+    var s=watchSnapshot();
+    if(!WATCHBASE){ WATCHBASE=s; WATCHBASE.__day=G.day; WATCHBASE.__ms=FRAMEMS; return; }
+
+    /* 1. anything that keeps growing. The slowdown after a skipped year
+          had to be SOME array climbing, and reading the source found
+          nothing -- so measure instead of reading. */
+    for(var k in s){
+      if(k.indexOf("__")===0)continue;
+      var was=WATCHBASE[k]||0, now=s[k]||0;
+      if(now>40&&now>was*2.5&&now-was>25)
+        watchNote("grow:"+k,k+" has grown "+was+" -> "+now);
+    }
+
+    /* 2. the frame itself. A doubling that sticks is the thing you feel. */
+    if(FRAMEMS>50&&WATCHBASE.__ms&&FRAMEMS>WATCHBASE.__ms*2.2)
+      watchNote("slow","frame time "+WATCHBASE.__ms.toFixed(0)+"ms -> "+FRAMEMS.toFixed(0)+"ms",
+                "faces "+WATCHBASE.faces+" -> "+s.faces+", npcs "+WATCHBASE.npcs+" -> "+s.npcs+
+                ", poseCache "+WATCHBASE.poseCache+" -> "+s.poseCache+
+                ", geo "+WATCHBASE.geo+" -> "+s.geo);
+
+    /* 3. numbers that have stopped being numbers. A NaN in a price is
+          silent and permanent -- it poisons that good for the whole game. */
+    if(!isFinite(G.coin))watchNote("coin","coin is not a number");
+    for(var g in (G.mkt||{}))if(!isFinite(G.mkt[g]))watchNote("nan:"+g,"price of "+g+" is not a number");
+    for(var g2 in (G.mkt2||{}))if(!isFinite(G.mkt2[g2]))watchNote("nan2:"+g2,"Veldkirk price of "+g2+" is not a number");
+    if(G.shop){
+      if(!isFinite(G.shop.store_in)||G.shop.store_in<0)watchNote("store_in","workshop input store is "+G.shop.store_in);
+      if(!isFinite(G.shop.store_out)||G.shop.store_out<0)watchNote("store_out","workshop output store is "+G.shop.store_out);
+    }
+    if(!isFinite(G.px)||!isFinite(G.pz))watchNote("ppos","your position is not a number");
+
+    /* 4. people where people cannot be. */
+    if(!inRoom()&&typeof blockedAt==="function"){
+      if(blockedAt(G.px,G.pz))watchNote("pwall","you are standing inside a wall");
+      var wallers=0,frozen=0,i;
+      for(i=0;i<(G.npcs||[]).length;i++){
+        var m=G.npcs[i];
+        if(!isFinite(m.x)||!isFinite(m.z)){watchNote("npcnan","a townsman has no position");continue;}
+        if(blockedAt(m.x,m.z))wallers++;
+        if(m.__wx===m.x&&m.__wz===m.z&&m.tx!==undefined&&
+           Math.hypot(m.tx-m.x,m.tz-m.z)>1.5){ m.__stuck=(m.__stuck||0)+1; if(m.__stuck>40)frozen++; }
+        else m.__stuck=0;
+        m.__wx=m.x; m.__wz=m.z;
+      }
+      for(i=0;i<(G.guards||[]).length;i++)if(blockedAt(G.guards[i].x,G.guards[i].z))wallers++;
+      if(wallers>2)watchNote("wallers",wallers+" people are standing inside walls");
+      if(frozen>2)watchNote("frozen",frozen+" people have stopped moving with somewhere to go");
+    }
+
+    /* 5. the chain. A workshop that has stopped is the bug he has been
+          describing all along, and it is invisible until you go and look. */
+    if(G.shop&&G.shop.bId==="shop"&&(G.shop.carters||0)>0&&G.coin>3000){
+      if(G.shop.store_in>=RECIPE&&G.shop.store_out>60)
+        watchNote("shelf","the workshop shelf is full and nothing is being carried out",
+                  "out="+G.shop.store_out);
+      if(G.shop.store_in===0&&G.shop.store_out===0&&G.shop.workers>0){
+        G.__dry=(G.__dry||0)+1;
+        if(G.__dry>120)watchNote("dry","the workshop has had nothing to work with for two minutes");
+      } else G.__dry=0;
+    }
+  }catch(e){ /* a watchdog that can break the game is worse than none */ }
+}
+/* what to send back when something feels wrong */
+function watchReport(){
+  var s=null; try{ s=watchSnapshot(); }catch(e){}
+  var h="GILD "+(($("vstamp")&&$("vstamp").textContent)||"?")+"  day "+(G?G.day:"-")+
+        "  "+(FPSNOW?FPSNOW.toFixed(0):"?")+"fps  "+(FRAMEMS?FRAMEMS.toFixed(0):"?")+"ms\n";
+  if(s){ h+="now: "; for(var k in s)if(s[k])h+=k+"="+s[k]+" "; h+="\n"; }
+  if(WATCHBASE){ h+="at start: "; for(var k2 in WATCHBASE)if(WATCHBASE[k2]&&k2.indexOf("__"))h+=k2+"="+WATCHBASE[k2]+" "; h+="\n"; }
+  h+=WATCHLOG.length?("\n"+WATCHLOG.join("\n")):"\nnothing tripped.";
+  return h;
+}
+function watchCopy(){
+  var t=watchReport();
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(t); note("Report copied");
+    } else throw 0;
+  }catch(e){
+    /* clipboard is refused in a lot of embedded contexts -- show it so it
+       can be selected by hand rather than failing silently */
+    var el=$("tracebox");
+    if(el){ el.style.display="block";
+      el.innerHTML='<div style="display:flex;justify-content:space-between;margin-bottom:4px">'+
+        '<b>Report &mdash; select and copy</b><button class="btn sm" onclick="toggleTrace()">close</button></div>'+
+        '<textarea readonly style="width:100%;height:30vh;background:#0d0b08;color:#e8dcc4;border:1px solid #4a3d28;font:12px ui-monospace,monospace">'+
+        t.replace(/[&<>]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c];})+'</textarea>';
+    }
+  }
+}
 function step(dt){
   /* the courtroom is a held scene: time and the city stand still while the
      hearing is on, so nothing wanders off or accrues behind your back */
@@ -13443,9 +13611,27 @@ function step(dt){
       var owed=(G.record&&G.record.wanted)||0;
       var blood=owed>0||outlawed()||G.heat>=55||seenViolent;
       var petty=(G.heat<25&&!g.called);
-      if(!caughtFighting&&!blood&&petty&&Math.random()>careMult*0.7){
-        note("The watch passes by.");
-        g.patrol=wasPatrol;g.roadPatrol=wasRoad;g.cool=30;g.called=0;
+      if(!caughtFighting&&!blood&&petty){
+        /* This branch had exactly two ends: he walks on, or you go down the
+           stair for three days. A failed laziness roll — better than even
+           odds at ordinary standing — dropped a man with six points of heat
+           and nothing outstanding straight into a cell, which is being
+           gaoled for having sent somebody to ask a question. A watchman who
+           has nothing to take you for takes your name and tells you to move
+           along. The cell is for men who have actually earned it. */
+        if(Math.random()>careMult*0.7){
+          note("The watch passes by.");
+          g.patrol=wasPatrol;g.roadPatrol=wasRoad;g.cool=30;g.called=0;
+        } else {
+          G.heat=Math.max(0,G.heat-9);
+          g.patrol=wasPatrol;g.roadPatrol=wasRoad;g.cool=150;g.called=0;
+          note("Warned by the watch.");
+          trace("WATCH WARNS (nothing outstanding, heat now "+Math.round(G.heat)+")");
+          say("A word in your ear",
+              "A man of the watch steps into your path, looks you over, and does not "+
+              "reach for anything.\n\n\u201cYour name has been coming up. Not enough to "+
+              "trouble the bench with. Keep it that way.\u201d\n\nHe walks on.");
+        }
       } else if(caughtFighting&&FIGHT&&FIGHT.foe===g){
         /* He IS the man you are fighting. He cannot also be the watchman who
            comes upon it and cuts you down for it — which is what happened:
@@ -13537,7 +13723,7 @@ function step(dt){
            wait for the bench where they can find you. */
         G.heat=Math.max(0,G.heat-18);
         g.patrol=wasPatrol;g.roadPatrol=wasRoad;g.cool=140;
-        if(!G.trial)summon(G.heat>34?"assault":"affray",rnd(3,5));
+        if(!G.trial)summon(G.heat>34?"assault":"affray",rnd(3,5),true);
         var wait=G.trial?Math.max(1,G.trial.dayDue-G.day):rnd(1,3);
         note("Taken by the watch.");
         /* if he saw violence and still walked you to a cell, the rule is
@@ -15196,13 +15382,25 @@ function trace(s){
   var el=(typeof $==="function")?$("tracebox"):null;
   if(el&&el.style.display==="block")el.innerHTML=traceHTML();
 }
+/* what the watchdog has caught, at the top of the panel where it cannot
+   be scrolled past */
+function watchHTML(){
+  if(!WATCHLOG.length)return '<div style="margin:2px 0 6px;color:#8fae7a">Watchdog: nothing has tripped.</div>';
+  var h='<div style="margin:2px 0 6px;padding:5px 6px;background:#2a1c14;border:1px solid #8a5a2a">'+
+        '<b style="color:#e8a85c">Watchdog &middot; '+WATCHLOG.length+' caught</b><br>';
+  for(var i=WATCHLOG.length-1;i>=0;i--)
+    h+='<div>'+String(WATCHLOG[i]).replace(/[&<>]/g,function(c){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c];})+'</div>';
+  return h+'</div>';
+}
 function traceHTML(){
   /* three things in a space-between row put the tally in the middle where
      it was easy to miss entirely. It gets its own line, at the top. */
   return '<div style="display:flex;justify-content:space-between;margin-bottom:4px">'+
          '<b>What the game did</b>'+
-         '<button class="btn sm" onclick="toggleTrace()">close</button></div>'+
-         traceCounts()+
+         '<span><button class="btn sm" onclick="watchCopy()">copy report</button>'+
+         '<button class="btn sm" onclick="toggleTrace()">close</button></span></div>'+
+         watchHTML()+traceCounts()+
          TRACE.map(function(l){return '<div>'+String(l).replace(/[&<>]/g,function(c){
            return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c];})+'</div>';}).join("");
 }
@@ -15248,6 +15446,10 @@ function toggleTrace(){
   var el=$("tracebox"); if(!el)return;
   var on=(el.style.display!=="block");
   el.style.display=on?"block":"none";
+  /* the readout is how bugs get reported, so it is reachable without the
+     five-tap secret — and without it the secret also switched AUDIT on,
+     which walks the whole world on every buildGeo */
+  var tb=$("tracetab"); if(tb)tb.style.opacity=on?"1":".42";
   if(on){
     el.innerHTML=traceHTML();
   }
@@ -16624,7 +16826,7 @@ function hourStr(h){
   var hh=Math.floor(h), mm=Math.round((h-hh)*60);
   return (hh<10?"0":"")+hh+":"+(mm<10?"0":"")+mm;
 }
-function summon(chargeId,dayGap){
+function summon(chargeId,dayGap,quiet){
   if(G.trial)return;
   /* You cannot summons a man you already have a warrant out for. That was
      the loop: skip the hearing, get summonsed again, skip that one too. */
@@ -16632,6 +16834,7 @@ function summon(chargeId,dayGap){
   G.trial=newTrial(chargeId,dayGap);
   var C=CHARGES[G.trial.charge];
   note("Summoned: "+C.n);
+  if(quiet)return;                    /* the caller has its own telling to do */
   say("A summons","The bailiff finds you in the street and reads it out.\n\n"+C.blurb+
       "\n\nThe charge is brought by "+G.trial.accuser+"."+
       "\n\nYou are to appear at the "+(G.trial.town===1?"Assize House in Veldkirk":"courthouse in Gild")+
@@ -16749,7 +16952,7 @@ function sentence(margin){
    held: the days you are in for. keepTrial: a man held to await his
    hearing still has the hearing — the cells are custody, not sentence. */
 function dungeon(days,keepTrial){
-  trace("GAOLED: taken to the cells");
+  trace("GAOLED: taken to the cells"+(G.trial?" on a charge of "+G.trial.charge:" with no charge laid"));
   /* time served settles it too */
   if(G.record)G.record.wanted=0;
   G.sawViolence=0;
@@ -16757,7 +16960,15 @@ function dungeon(days,keepTrial){
   note("Held "+days+" days");
   G.gaolDays=days;
   enterRoom("gaol");
+  /* You went down the stair and the game never said what for: summon()
+     reads out the charge in a say(), and this say() replaced it on the same
+     frame. Whatever put you here is named HERE, where you will actually
+     read it, and the bailiff's version is kept quiet when the two collide. */
+  var chg=(G.trial&&CHARGES[G.trial.charge])?CHARGES[G.trial.charge]:null;
   say("The cells",
+    (chg?"Taken up on a charge of "+chg.n.toLowerCase()+
+         (G.trial.accuser?", laid by "+G.trial.accuser:"")+".\n\n"
+        :"No charge is read out. Somebody wanted you somewhere they could find you.\n\n")+
     "Down the stair under the hall, where it is colder than the season and wetter.\n\n"+
     "There are rings in the wall and chains hanging off them, and men on the straw who "+
     "have been here longer than you.\n\n"+
@@ -17956,7 +18167,7 @@ function loop(ts){
     FPSNOW=FPSNOW?FPSNOW+(inst-FPSNOW)*0.08:inst;
     FRAMEMS=FRAMEMS?FRAMEMS+(dt*1000-FRAMEMS)*0.08:dt*1000;
   }
-  if(G){WORLDT+=dt;updateSmoke(dt);}
+  if(G){WORLDT+=dt;updateSmoke(dt);watchTick(dt);}
   /* speed 0 used to skip step() outright: a hard freeze, nothing moving,
      nothing to look at. It now crawls forward at a small fraction instead
      of stopping dead, so the world is still visibly alive while you
