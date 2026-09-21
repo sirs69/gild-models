@@ -183,12 +183,17 @@ input[type=text]{-webkit-appearance:none;appearance:none;width:100%;
   padding:12px}
 input[type=text]:focus{outline:0;border-color:var(--brass)}
 input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(--bone-dim);opacity:.75}
-.look{display:flex;gap:14px;align-items:flex-start;margin-bottom:6px}
-.look canvas{width:104px;height:104px;border-radius:8px;border:1px solid var(--edge);flex:0 0 auto}
-.lookrows{display:flex;flex-direction:column;gap:6px;flex:1}
-.lookrow{display:flex;align-items:center;gap:6px}
-.lookrow span{font-family:"Alegreya Sans",system-ui,sans-serif;font-size:calc(14px * var(--s));opacity:.8;width:58px;flex:0 0 auto}
-.lookrow i{display:inline-block;width:26px;height:26px;border-radius:50%;border:1px solid var(--edge)}
+.look{display:flex;gap:16px;align-items:flex-start;margin-bottom:6px}
+.lookfig{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:6px;position:sticky;top:8px}
+.look canvas{width:calc(150px * var(--s));height:calc(200px * var(--s));border-radius:10px;border:1px solid var(--edge);
+  background:radial-gradient(ellipse at 50% 38%,#3a342a,#17130d 78%)}
+.lookturn{display:flex;gap:6px}
+.lookrows{display:flex;flex-direction:column;gap:7px;flex:1;min-width:0}
+.lookrow{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.lookrow span{font-family:"Alegreya Sans",system-ui,sans-serif;font-size:calc(14px * var(--s));opacity:.8;width:62px;flex:0 0 auto}
+.lookrow .btn.sm{padding:5px 9px}
+.lookrow i{display:inline-block;width:28px;height:28px;border-radius:50%;border:2px solid transparent;box-shadow:0 0 0 1px var(--edge);cursor:pointer}
+.lookrow i.on{border-color:var(--brass);box-shadow:0 0 0 1px var(--brass)}
 .lookrow b{font-family:"Alegreya Sans",system-ui,sans-serif;font-size:calc(14px * var(--s));min-width:72px;text-align:center}
 .lookrow .btn.sm.on{border-color:var(--brass);background:#4A3A24}
 .pick{display:grid;gap:9px}
@@ -253,7 +258,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.031</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.032</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -265,14 +270,15 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
       <div id="namepick" class="fine" style="margin-top:7px">Or tap one: </div>
       <div class="eyebrow">Who you are</div>
       <div class="look" id="look">
-        <canvas id="lookcv" width="104" height="104"></canvas>
-        <div class="lookrows">
-          <div class="lookrow"><span>You are</span><button class="btn sm" onclick="lookSet('sex',0)" id="lkM">a man</button><button class="btn sm" onclick="lookSet('sex',1)" id="lkF">a woman</button></div>
-          <div class="lookrow"><span>Skin</span><button class="btn sm" onclick="lookStep('skin',-1)">&lsaquo;</button><i id="lkSkin"></i><button class="btn sm" onclick="lookStep('skin',1)">&rsaquo;</button></div>
-          <div class="lookrow"><span>Hair</span><button class="btn sm" onclick="lookStep('hair',-1)">&lsaquo;</button><i id="lkHair"></i><button class="btn sm" onclick="lookStep('hair',1)">&rsaquo;</button></div>
-          <div class="lookrow" id="lkBeardRow"><span>Beard</span><button class="btn sm" onclick="lookSet('beard',0)" id="lkB0">none</button><button class="btn sm" onclick="lookSet('beard',1)" id="lkB1">bearded</button></div>
-          <div class="lookrow"><span>Build</span><button class="btn sm" onclick="lookStep('build',-1)">&lsaquo;</button><b id="lkBuild"></b><button class="btn sm" onclick="lookStep('build',1)">&rsaquo;</button></div>
+        <div class="lookfig">
+          <canvas id="lookcv" width="240" height="320"></canvas>
+          <div class="lookturn">
+            <button class="btn sm" onclick="lookTurn(-1)" aria-label="Turn left">&#8634;</button>
+            <button class="btn sm" onclick="lookRandom()" aria-label="Surprise me">&#9860;</button>
+            <button class="btn sm" onclick="lookTurn(1)" aria-label="Turn right">&#8635;</button>
+          </div>
         </div>
+        <div class="lookrows" id="lookrows"></div>
       </div>
       <div class="eyebrow">Your trade</div>
       <div class="pick" id="pick"></div>
@@ -11465,8 +11471,8 @@ function glbPlace(op,ch,posed,x,z,gy,hx,hz,uid,build,dress){
     var PCOL;
     var TGT=null;
     switch(PK?PK[ti]:0){
-      case 1: TGT=LOOK.skin; PCOL=glbDye(_r,_g,_b,TGT); break;   /* hands, arms, face */
-      case 2: TGT=LOOK.hair; PCOL=glbDye(_r,_g,_b,TGT); break;   /* hair, hood, cap */
+      case 1: TGT=(dress&&dress.skin)||LOOK.skin; PCOL=glbDye(_r,_g,_b,TGT); break;   /* hands, arms, face */
+      case 2: TGT=(dress&&dress.hairCol)||LOOK.hair; PCOL=glbDye(_r,_g,_b,TGT); break;   /* hair, hood, cap */
       case 3: TGT=(DHEM&&BP[a*3+1]<HEMY)?DHEM:((DMI&&BP[a*3]<0)?DLO:DUP); PCOL=glbDye(_r,_g,_b,TGT); break;   /* tunic, sleeves */
       case 4: TGT=(DMI&&BP[a*3]>0)?DUP:DLO; PCOL=glbDye(_r,_g,_b,TGT); break;   /* hose: parti-colour crosses the two over */
       case 5: TGT=LOOK.bt; PCOL=glbDye(_r,_g,_b,TGT);   break;   /* boots */
@@ -11493,7 +11499,7 @@ function glbPlace(op,ch,posed,x,z,gy,hx,hz,uid,build,dress){
         n:[rx*N[a*3]+hx*N[a*3+2],N[a*3+1],rz*N[a*3]+hz*N[a*3+2],
            rx*N[b*3]+hx*N[b*3+2],N[b*3+1],rz*N[b*3]+hz*N[b*3+2],
            rx*N[c*3]+hx*N[c*3+2],N[c*3+1],rz*N[c*3]+hz*N[c*3+2]],
-        c:glbDye(tc[ti*3],tc[ti*3+1],tc[ti*3+2],LOOK.skin),
+        c:glbDye(tc[ti*3],tc[ti*3+1],tc[ti*3+2],(dress&&dress.skin)||LOOK.skin),
         /* the painted face still takes the person's own complexion, so the
            face matches the hands rather than staying the model's one tone */
         vc:vcl?(TGT?glbDyeVC(prim,a,b,c,TGT):[vcl[a*3],vcl[a*3+1],vcl[a*3+2],
@@ -11990,8 +11996,9 @@ function glbDrawFigure(op,which,x,z,gy,hx,hz,walkT,gaitAmp,weapon,uid,kid,helm,s
      his model's own clothes; he dresses by the same rules from his own
      seed now, and keeps an ordinary build */
   var dsub=subj||(GLB_PLAYER_DRAW?{garb:(G&&G.garb)||"plain",player:1}:null);
-  if(dsub&&!kid){ build=dsub.player?0:glbBuild(uid,isGuard);
-    try{ dress=accLook(uid,!!useCh._female,isGuard,dsub.garb); }catch(e){ dress=null; } }
+  var PL=dsub&&dsub.player?(GLB_PREVIEW_LOOK||((G&&G.look&&G.look.seed===G.pseed)?G.look:null)):null;
+  if(dsub&&!kid){ build=dsub.player?(PL?LOOK_BUILD[PL.build%LOOK_BUILD.length].v:0):glbBuild(uid,isGuard);
+    try{ dress=PL?lookDress(PL):accLook(uid,!!useCh._female,isGuard,dsub.garb); }catch(e){ dress=null; } }
   glbPlace(op,useCh,posed,x,z,gy,hx,hz,uid,build,dress);
   if(dress){ try{ glbAccessories(op,useCh,posed,x,z,gy,hx,hz,uid,build,dress,!!helm); }
                   catch(e){ if(!GLB_ACC_ERR){GLB_ACC_ERR=1;trace("ACC: "+(e&&e.message));} } }
@@ -13553,7 +13560,7 @@ function glDynamic(){
   if(FIGHT){ var ydx=FIGHT.fx-G.px, ydz=FIGHT.fz-G.pz, ydd=Math.hypot(ydx,ydz)||1;
              lungeX=ydx/ydd*yo; lungeZ=ydz/ydd*yo; }
   var _drewPlayer=false;
-  if(!FIGHT){ GLB_PLAYER_DRAW=true; try{ _drewPlayer=glbDrawFigure(op,glbForRole("walker",G.sex||0,G.pseed||7),G.px+lungeX,G.pz+lungeZ,pgy,G.hx,G.hz,G.walkT,G.gaitAmp,null,G.pseed||7); }catch(e){} GLB_PLAYER_DRAW=false; }
+  if(!FIGHT){ GLB_PLAYER_DRAW=true; try{ _drewPlayer=glbDrawFigure(op,((G.look&&G.look.seed===G.pseed&&lookModel(G.look))||glbForRole("walker",G.sex||0,G.pseed||7)),G.px+lungeX,G.pz+lungeZ,pgy,G.hx,G.hz,G.walkT,G.gaitAmp,null,G.pseed||7); }catch(e){} GLB_PLAYER_DRAW=false; }
   if(!_drewPlayer)
   glPerson(op,G.px+lungeX,G.pz+lungeZ,[196,66,52],true,true,G.skin,G.walkT,G.gaitAmp,G.hx,G.hz,G.sex||0,false,pgy,G.pseed||7,
            0,yst[0],pGarb(),yst[1]);
@@ -19657,49 +19664,193 @@ function drawCheats(){
 /* ════════════════ WIRING ════════════════ */
 var chosen="baker";
 /* ── who you are ────────────────────────────────────────────────────
-   Everything about a body — hair, beard, height, girth, shoulders — is
-   read off one seed, so choosing a look is choosing a seed: search for
-   one whose hash gives the hair, the beard and the build asked for. The
-   proportions are then exactly the ones every other body uses. */
-var LOOK={sex:0,skin:0,hair:0,beard:0,build:1,seed:7};
-var LOOK_BUILDS=["slight","middling","broad"];
-function lookSeedFor(hair,beard,build,sex){
-  /* seeds stay under three million: the hash multiplies by 2654435761
-     and past that the product loses its low bits to double precision */
-  var s0=200000+hair*40000+build*13000+(sex?6000:0);
-  for(var s=s0;s<2900000;s++){
-    var b=(s*2654435761)>>>0;
-    if(b%6!==hair)continue;
-    if(((b>>>9)%3===0)!==!!beard)continue;
-    var tall=(b&255)/255, girth=((b>>8)&255)/255, shl=((b>>16)&255)/255, stoop=((b>>24)&255)/255;
-    if(stoop>0.35)continue;
-    if(build===0&&!(girth<0.30&&tall<0.55&&shl<0.45))continue;
-    if(build===1&&!(girth>0.35&&girth<0.65&&tall>0.30&&tall<0.72&&shl>0.3&&shl<0.7))continue;
-    if(build===2&&!(girth>0.70&&shl>0.62&&tall>0.45))continue;
-    return s;
+   This panel used to set a seed for the old hand-drawn body -- hair
+   colour, beard and "build" read off a hash -- and showed a painted
+   portrait, while the man you then walked about as was a loaded model
+   dressed from a different hash altogether: the skin you picked, the
+   hair you picked and the build you picked never reached him. Every row
+   here now sets something the figure in the town actually wears, and the
+   picture is that figure: the same model, drawn by the same code, dressed
+   by the same rules, turned to face you. */
+var LOOK={sex:0,model:null,build:1,skin:0,hair:1,hairCol:1,beard:0,hat:0,up:0,lo:0,cut:0,sleeves:0,over:1,seed:7,turn:0.45};
+var LOOK_BUILD=[{n:"lean",v:-0.18},{n:"ordinary",v:0},{n:"stout",v:0.30},{n:"heavy",v:0.62}];
+var LOOK_HAIR_M=[{n:"cropped",v:1},{n:"bowl",v:2},{n:"thinning",v:3},{n:"long",v:4},{n:"shaved",v:0}];
+var LOOK_HAIR_F=[{n:"long",v:5},{n:"bun",v:6},{n:"braids",v:7}];
+var LOOK_BEARD=[{n:"none",v:0},{n:"full",v:1},{n:"moustache",v:2},{n:"goatee",v:3}];
+var LOOK_HAT_M=[{n:"bare",v:null},{n:"coif",v:"coif"},{n:"felt hat",v:"felt"},{n:"cap",v:"cap"},{n:"hood",v:"hood"},{n:"straw",v:"straw"}];
+var LOOK_HAT_F=[{n:"bare",v:null},{n:"kerchief",v:"kerchief"},{n:"veil",v:"veil"},{n:"hood",v:"hood"},{n:"straw",v:"straw"}];
+var LOOK_CUT_M=[{n:"tunic",v:0},{n:"knee coat",v:1}], LOOK_CUT_F=[{n:"gown",v:0},{n:"kirtle",v:1}];
+var LOOK_OVER=[{n:"nothing",v:0},{n:"belt",v:1},{n:"apron",v:2},{n:"cloak",v:3},{n:"jerkin",v:4}];
+var LOOK_TUNIC=GARB_UPPER.concat([[98,36,42],[40,64,46],[38,46,74]]);
+/* hose to go with the tunic: the same dye darker, a brown, a charcoal, or
+   one cloth top to bottom -- every option matches by construction */
+function lookHose(up,k){
+  if(k===1)return GARB_NEUTRAL[0]; if(k===2)return GARB_NEUTRAL[1]; if(k===3)return up.slice();
+  var g=(up[0]+up[1]+up[2])/3;
+  return [Math.round((up[0]*0.8+g*0.2)*0.60),Math.round((up[1]*0.8+g*0.2)*0.60),Math.round((up[2]*0.8+g*0.2)*0.60)];
+}
+/* the outfit the figure is drawn in, from a look -- used for the picture
+   here and for the player in the town, so the two cannot disagree */
+function lookDress(K){
+  var L=accLook(K.seed,!!K.sex,false,"plain");
+  var hs=K.sex?LOOK_HAIR_F:LOOK_HAIR_M, hats=K.sex?LOOK_HAT_F:LOOK_HAT_M;
+  L.hair=hs[Math.min(K.hair,hs.length-1)].v; L.hairCol=HAIRCOL[K.hairCol%HAIRCOL.length];
+  L.beard=K.sex?0:LOOK_BEARD[K.beard%LOOK_BEARD.length].v;
+  L.hat=hats[Math.min(K.hat,hats.length-1)].v;
+  L.up=LOOK_TUNIC[K.up%LOOK_TUNIC.length]; L.lo=lookHose(L.up,K.lo%4);
+  L.skin=SKINCOLORS[K.skin%SKINCOLORS.length];
+  L.gown=(K.sex&&!K.cut)?1:0; L.cote=(!K.sex&&K.cut)?1:0; L.sleeves=K.sleeves?1:0;
+  L.belt=(K.over===1||K.over===2); L.apron=(K.over===2); L.cloak=(K.over===3); L.vest=(K.over===4)?ACC_LEATHER:null;
+  L.mi=null; L.hem=null; L.sack=0; L.tabard=0; L.mantle=null; L.collar=0;
+  return L;
+}
+function lookModelList(sex){ try{ return glbRoleSet(sex?"walker-f":"walker-m").filter(function(n){return GLB_IMPORTED[n];}); }catch(e){ return []; } }
+function lookModel(K){
+  var list=lookModelList(K.sex); if(!list.length)return null;
+  if(K.model&&list.indexOf(K.model)>=0)return K.model;
+  return list[(K.seed>>>0)%list.length];
+}
+/* ── the picture: the town's own renderer into a small target of its own ── */
+var FIG={fb:null,tex:null,rb:null,batch:null,w:240,h:320,failed:0};
+function figInit(){
+  if(FIG.fb)return true;
+  if(FIG.failed||typeof gl==="undefined"||!gl||!GLOK)return false;
+  try{
+    FIG.tex=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,FIG.tex);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,FIG.w,FIG.h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    FIG.rb=gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER,FIG.rb);
+    gl.renderbufferStorage(gl.RENDERBUFFER,gl.DEPTH_COMPONENT16,FIG.w,FIG.h);
+    FIG.fb=gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER,FIG.fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,FIG.tex,0);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,FIG.rb);
+    var ok=gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE;
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+    if(!ok){FIG.fb=null;FIG.failed=1;return false;}
+    FIG.batch=glMakeBatch(); return true;
+  }catch(e){ try{gl.bindFramebuffer(gl.FRAMEBUFFER,null);}catch(e2){} FIG.fb=null; FIG.failed=1; return false; }
+}
+var GLB_PREVIEW_LOOK=null;
+function figRender(cv,K){
+  var which=lookModel(K); if(!which||!figInit())return false;
+  var op=[], hx=Math.sin(K.turn), hz=Math.cos(K.turn);
+  GLB_PREVIEW_LOOK=K; GLB_PLAYER_DRAW=true;
+  try{ glbDrawFigure(op,which,0,0,0,hx,hz,0,0,null,K.seed); }
+  finally{ GLB_PLAYER_DRAW=false; GLB_PREVIEW_LOOK=null; }
+  if(!op.length)return false;
+  var lx=1e9,hxx=-1e9,ly=1e9,hy=-1e9,i,j;
+  for(i=0;i<op.length;i++)for(j=0;j<3;j++){var q=op[i].p[j];
+    if(q[0]<lx)lx=q[0]; if(q[0]>hxx)hxx=q[0]; if(q[1]<ly)ly=q[1]; if(q[1]>hy)hy=q[1];}
+  /* frame on the height, not the widest thing: a straw brim or a cloak
+     should not shrink the whole man to fit it */
+  var H=(hy-ly)*1.10, W=H*FIG.w/FIG.h, cxm=0, cym=(hy+ly)/2+0.01;
+  var eye=[0,cym+0.35,6], view=m4look(eye,[0,cym,0],[0,1,0]);
+  var proj=m4ortho(cxm-W/2,cxm+W/2,-H/2,H/2,1,12), vp=m4mul(proj,view);
+  var px=new Uint8Array(FIG.w*FIG.h*4);
+  try{
+    glBuild(op,FIG.batch);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,FIG.fb); gl.viewport(0,0,FIG.w,FIG.h);
+    gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.disable(gl.BLEND); gl.depthMask(true);
+    gl.useProgram(glProg);
+    gl.uniformMatrix4fv(GLLOC.uVP,false,vp);
+    gl.uniform3fv(GLLOC.uSun,new Float32Array([-0.42,0.72,0.55]));
+    gl.uniform3fv(GLLOC.uSunCol,new Float32Array([0.66,0.63,0.56]));
+    gl.uniform3fv(GLLOC.uAmb,new Float32Array([0.42,0.42,0.48]));
+    gl.uniform3fv(GLLOC.uSkyAmb,new Float32Array([0.22,0.25,0.34]));
+    gl.uniform3fv(GLLOC.uGrdAmb,new Float32Array([0.12,0.11,0.08]));
+    gl.uniform3fv(GLLOC.uFog,new Float32Array([0,0,0])); gl.uniform1f(GLLOC.uFogN,1e5); gl.uniform1f(GLLOC.uFogF,2e5);
+    gl.uniform3fv(GLLOC.uEye,new Float32Array(eye)); gl.uniform1f(GLLOC.uLitWin,0); gl.uniform1f(GLLOC.uShadowOn,0);
+    gl.uniformMatrix4fv(GLLOC.uSunVP,false,vp); gl.uniform3fv(GLLOC.uTorches,new Float32Array(48)); gl.uniform1f(GLLOC.uTorchCount,0);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,glShadowTex||glTex); gl.uniform1i(GLLOC.uShadowMap,1);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,glTex); gl.uniform1i(GLLOC.uTex,0);
+    glDrawBatch(FIG.batch);
+    gl.readPixels(0,0,FIG.w,FIG.h,gl.RGBA,gl.UNSIGNED_BYTE,px);
+  } finally { gl.bindFramebuffer(gl.FRAMEBUFFER,null); if(tcv&&tcv.width)gl.viewport(0,0,tcv.width,tcv.height); }
+  var cx=cv.getContext("2d"); if(!cx)return false;
+  var img=cx.createImageData(FIG.w,FIG.h), d=img.data, lit=0;
+  for(var y=0;y<FIG.h;y++){ var src=(FIG.h-1-y)*FIG.w*4, dst=y*FIG.w*4;
+    for(var x2=0;x2<FIG.w*4;x2++)d[dst+x2]=px[src+x2]; }
+  for(i=3;i<d.length;i+=4)if(d[i])lit++;
+  if(lit<200)return false;
+  cv.width=FIG.w; cv.height=FIG.h;
+  var sh=cx.createRadialGradient(FIG.w/2,FIG.h*0.955,2,FIG.w/2,FIG.h*0.955,FIG.w*0.30);
+  sh.addColorStop(0,"rgba(0,0,0,.5)"); sh.addColorStop(1,"rgba(0,0,0,0)");
+  cx.clearRect(0,0,FIG.w,FIG.h); cx.save(); cx.translate(0,FIG.h*0.955); cx.scale(1,0.18); cx.translate(0,-FIG.h*0.955);
+  cx.fillStyle=sh; cx.fillRect(0,0,FIG.w,FIG.h); cx.restore();
+  var tmp=document.createElement("canvas"); tmp.width=FIG.w; tmp.height=FIG.h; tmp.getContext("2d").putImageData(img,0,0);
+  cx.drawImage(tmp,0,0);
+  return true;
+}
+/* ── the rows ── */
+function lookChips(label,key,opts,cond){
+  if(cond===false)return "";
+  var h='<div class="lookrow"><span>'+label+'</span>';
+  for(var i=0;i<opts.length;i++)
+    h+='<button class="btn sm'+(LOOK[key]===i?' on':'')+'" onclick="lookSet(\''+key+'\','+i+')">'+opts[i].n+'</button>';
+  return h+'</div>';
+}
+function lookSwatches(label,key,cols){
+  var h='<div class="lookrow"><span>'+label+'</span>';
+  for(var i=0;i<cols.length;i++){ var c=cols[i];
+    h+='<i class="'+(LOOK[key]===i?'on':'')+'" style="background:rgb('+c[0]+','+c[1]+','+c[2]+')" onclick="lookSet(\''+key+'\','+i+')"></i>'; }
+  return h+'</div>';
+}
+function lookRows(){
+  var el=$("lookrows"); if(!el)return;
+  var F=LOOK.sex, models=lookModelList(F), h="";
+  h+='<div class="lookrow"><span>You are</span><button class="btn sm'+(F?'':' on')+'" onclick="lookSet(\'sex\',0)">a man</button>'+
+     '<button class="btn sm'+(F?' on':'')+'" onclick="lookSet(\'sex\',1)">a woman</button></div>';
+  if(models.length>1){
+    var mi=Math.max(0,models.indexOf(lookModel(LOOK)));
+    h+='<div class="lookrow"><span>Face</span><button class="btn sm" onclick="lookFace(-1)">&lsaquo;</button><b>'+(mi+1)+' of '+models.length+
+       '</b><button class="btn sm" onclick="lookFace(1)">&rsaquo;</button></div>';
   }
-  return s0;
+  h+=lookChips("Build","build",LOOK_BUILD);
+  h+=lookSwatches("Skin","skin",SKINCOLORS);
+  h+=lookChips("Hair","hair",F?LOOK_HAIR_F:LOOK_HAIR_M);
+  h+=lookSwatches("Colour","hairCol",HAIRCOL);
+  h+=lookChips("Beard","beard",LOOK_BEARD,!F);
+  h+=lookChips("Head","hat",F?LOOK_HAT_F:LOOK_HAT_M);
+  h+=lookChips("Cut","cut",F?LOOK_CUT_F:LOOK_CUT_M);
+  h+=lookSwatches("Cloth","up",LOOK_TUNIC);
+  var up=LOOK_TUNIC[LOOK.up%LOOK_TUNIC.length];
+  h+=lookSwatches(F?"Kirtle":"Hose","lo",[lookHose(up,0),lookHose(up,1),lookHose(up,2),lookHose(up,3)]);
+  h+=lookChips("Sleeves","sleeves",[{n:"short"},{n:"long"}]);
+  h+=lookChips("Over","over",LOOK_OVER);
+  el.innerHTML=h;
 }
 function lookApply(){
-  LOOK.seed=lookSeedFor(LOOK.hair,LOOK.sex?0:LOOK.beard,LOOK.build,LOOK.sex);
-  var cv=$("lookcv");
-  if(cv&&typeof famPortrait==="function")famPortrait(cv,{uid:LOOK.seed,skin:LOOK.skin,sex:LOOK.sex,age:21,alive:true,mate:null},true);
-  var sc=SKINCOLORS[LOOK.skin], hc=FAM_HAIRS[LOOK.hair];
-  if($("lkSkin"))$("lkSkin").style.background="rgb("+sc[0]+","+sc[1]+","+sc[2]+")";
-  if($("lkHair"))$("lkHair").style.background="rgb("+hc[0]+","+hc[1]+","+hc[2]+")";
-  if($("lkBuild"))$("lkBuild").textContent=LOOK_BUILDS[LOOK.build];
-  if($("lkM")){$("lkM").className="btn sm"+(LOOK.sex?"":" on");$("lkF").className="btn sm"+(LOOK.sex?" on":"");}
-  if($("lkB0")){$("lkB0").className="btn sm"+(LOOK.beard?"":" on");$("lkB1").className="btn sm"+(LOOK.beard?" on":"");}
-  if($("lkBeardRow"))$("lkBeardRow").style.display=LOOK.sex?"none":"";
+  lookRows();
+  var cv=$("lookcv"); if(!cv)return;
+  var drew=false;
+  try{ drew=figRender(cv,LOOK); }catch(e){ drew=false; }
+  if(!drew&&typeof famPortrait==="function"){
+    /* the models are still on their way: the painted portrait stands in */
+    cv.width=240; cv.height=320;
+    try{ famPortrait(cv,{uid:LOOK.seed,skin:LOOK.skin,sex:LOOK.sex,age:21,alive:true,mate:null},true); }catch(e){}
+  }
+  LOOK._gl=drew;
 }
 function lookSet(k,v){
   var was=LOOK.sex; LOOK[k]=v;
-  if(k==="sex"&&was!==v){drawNamePick();}
+  if(k==="sex"&&was!==v){ LOOK.hair=0; LOOK.hat=0; LOOK.beard=0; LOOK.cut=0; LOOK.model=null; drawNamePick(); }
   lookApply();
 }
-function lookStep(k,d){
-  var n={skin:SKINCOLORS.length,hair:FAM_HAIRS.length,build:3}[k];
-  LOOK[k]=((LOOK[k]+d)%n+n)%n; lookApply();
+function lookFace(d){
+  var L=lookModelList(LOOK.sex); if(!L.length)return;
+  var i=L.indexOf(lookModel(LOOK)); LOOK.model=L[((i+d)%L.length+L.length)%L.length]; lookApply();
+}
+function lookTurn(d){ LOOK.turn+=d*0.70; lookApply(); }
+function lookRandom(){
+  LOOK.seed=rnd(1000,2800000);
+  var hs=LOOK.sex?LOOK_HAIR_F:LOOK_HAIR_M, hats=LOOK.sex?LOOK_HAT_F:LOOK_HAT_M;
+  LOOK.model=null; LOOK.build=[0,1,1,1,2,2,3][rnd(0,6)]; LOOK.skin=rnd(0,SKINCOLORS.length-1);
+  LOOK.hair=rnd(0,hs.length-1); LOOK.hairCol=rnd(0,HAIRCOL.length-1); LOOK.beard=LOOK.sex?0:rnd(0,3);
+  LOOK.hat=Math.random()<0.45?0:rnd(1,hats.length-1); LOOK.up=rnd(0,LOOK_TUNIC.length-1); LOOK.lo=rnd(0,3);
+  LOOK.cut=Math.random()<0.3?1:0; LOOK.sleeves=Math.random()<0.4?1:0; LOOK.over=rnd(0,4);
+  lookApply();
 }
 /* the names offered fit who you said you are */
 function drawNamePick(){
@@ -19754,12 +19905,23 @@ drawPick();
    starting anything. */
 (function(){
 })();
-LOOK.skin=rnd(0,SKINCOLORS.length-1); LOOK.hair=rnd(0,FAM_HAIRS.length-1); LOOK.beard=Math.random()<0.34?1:0;
-drawNamePick(); lookApply();
+LOOK.sex=0; lookRandom();
+drawNamePick();
+/* the picture wants the town's renderer and the models, which used to
+   wait for "Enter the city": start both now, and redraw the figure once
+   the models have arrived */
+try{ bindCanvas(); }catch(e){}
+try{ var _lg=glbCdnLoad(); if(_lg&&_lg.catch)_lg.catch(function(){}); }catch(e){}
+var LOOKPOLL=setInterval(function(){
+  if(G||$("start").style.display==="none"){clearInterval(LOOKPOLL);return;}
+  if(!LOOK._gl&&lookModel(LOOK))lookApply();
+},700);
 $("begin").onclick=function(){
   var nm=($("nm").value.trim()||$("nm").placeholder).replace(/[<>&"]/g,"").slice(0,18);
   $("start").style.display="none";$("game").style.display="block";
   bindCanvas();newGame(nm,chosen,{sex:LOOK.sex,skin:LOOK.skin,seed:LOOK.seed});
+  /* what was chosen here is what the player wears in the town */
+  if(G){ G.look=JSON.parse(JSON.stringify(LOOK)); delete G.look._gl; G.look.seed=G.pseed; }
 };
 $("resume").onclick=function(){
   load(function(s){
