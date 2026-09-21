@@ -81,7 +81,7 @@ body.hc #cheatbox{background:#111}
 .stage{position:relative;background:#0E1418}
 #tc{display:block;width:100%;height:min(58vh,540px);touch-action:none;cursor:grab}
 #tc:active{cursor:grabbing}
-.speed{position:absolute;left:10px;bottom:10px;display:flex;gap:6px;z-index:5}
+.speed{position:absolute;right:10px;top:10px;display:flex;gap:6px;z-index:5}
 .speed button{background:rgba(21,17,9,.82);border:1px solid var(--edge);color:var(--bone);
   border-radius:4px;padding:8px 12px;font-family:"Alegreya Sans",system-ui,sans-serif;
   font-size:calc(15px * var(--s));font-weight:700;line-height:1;min-height:40px;min-width:44px}
@@ -111,6 +111,34 @@ body.hc #cheatbox{background:#111}
 
 /* ── the card for wherever you are standing ── */
 .here{padding:14px 15px 18px;border-top:2px solid var(--brass);background:var(--slate);flex:1 1 auto}
+/* ── the holdings bar: every building you hold, standing on the city itself.
+   No band, no tiles, no captions — the pictures have transparent grounds,
+   so the town shows between and around them, and a tap anywhere between
+   two of them still lands on the town. ── */
+.bbar{position:absolute;bottom:calc(6px * var(--s));left:0;right:0;z-index:5;display:none;
+  justify-content:center;align-items:flex-end;gap:calc(2px * var(--s));
+  overflow-x:auto;overflow-y:hidden;pointer-events:none;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.bbar::-webkit-scrollbar{display:none}
+.bbar.on{display:flex}
+.bi{flex:0 0 auto;pointer-events:auto;background:none;border:0;padding:0;margin:0;
+  width:calc(62px * var(--s));line-height:0;-webkit-tap-highlight-color:transparent}
+.bi img{display:block;width:100%;height:auto;aspect-ratio:4/3;object-fit:contain;
+  filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.85)) drop-shadow(0 0 5px rgba(0,0,0,.45))}
+.bi .bic{display:flex;align-items:flex-end;justify-content:center;width:100%;aspect-ratio:4/3;
+  filter:drop-shadow(0 1px 2px rgba(0,0,0,.8))}
+.bi .bic>span{margin-right:0!important}
+.bi.here img,.bi.here .bic{filter:drop-shadow(0 0 1.5px var(--brass)) drop-shadow(0 0 5px var(--brass))}
+.bi.fire img,.bi.fire .bic{filter:drop-shadow(0 0 1.5px #ff6a2a) drop-shadow(0 0 6px #ff6a2a)}
+.bi:active img{transform:translateY(1px)}
+.bi.pack{display:grid;grid-template-columns:1fr 1fr;align-content:end;align-items:end;pointer-events:none;aspect-ratio:4/3}
+.bq{background:none;border:0;padding:0;margin:0;line-height:0;pointer-events:auto;min-width:0;
+  -webkit-tap-highlight-color:transparent}
+.bq img{display:block;width:100%;height:auto;aspect-ratio:4/3;object-fit:contain;
+  filter:drop-shadow(0 1px 1px rgba(0,0,0,.85)) drop-shadow(0 0 3px rgba(0,0,0,.45))}
+.bq .bic{display:flex;align-items:flex-end;justify-content:center;width:100%;aspect-ratio:4/3;overflow:hidden}
+.bq .bic>span{margin-right:0!important;transform:scale(.5);transform-origin:bottom center}
+.bq.here img,.bq.here .bic{filter:drop-shadow(0 0 1px var(--brass)) drop-shadow(0 0 3px var(--brass))}
+.bq.fire img,.bq.fire .bic{filter:drop-shadow(0 0 1px #ff6a2a) drop-shadow(0 0 4px #ff6a2a)}
 .here h2{margin:0 0 2px;font-family:"Marcellus SC",Georgia,serif;font-size:calc(23px * var(--s));
   font-weight:400;letter-spacing:.03em}
 .here .sub{font-family:"Alegreya Sans",system-ui,sans-serif;font-size:calc(14.5px * var(--s));
@@ -225,7 +253,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.023</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.027</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -288,6 +316,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
         <button data-sp="4">4&times;</button>
       </div>
       <div class="clock" id="clock">—</div>
+      <div class="bbar" id="bbar"></div>
       <div class="roster" id="roster"></div>
       <button id="stepOutBtn" onclick="walkOutOfCourt()" style="display:none;position:absolute;
         left:50%;bottom:14px;transform:translateX(-50%);z-index:6;padding:8px 16px;
@@ -1503,14 +1532,33 @@ function buildingIcon(b){
     '<span style="position:absolute;left:'+(22-3)+'px;bottom:2px;width:6px;height:'+
       Math.round(hpx*0.45)+'px;background:rgba(40,28,18,.85)"></span></span>';
 }
+/* What is yours was decided in two places that disagreed: the red flags
+   counted your trade house, your house, a second workshop, a den and every
+   deed, while Holdings counted only the workshop and the deeds — so the
+   house you sleep in flew your flag and was missing from the list of what
+   you hold. One rule now, and the flags, Holdings and the bar all ask it. */
+function isMine(b){
+  if(!b||!G)return false;
+  return b.kind==="shop"||b.kind==="shop2"||b.kind==="home"||b.kind==="den"||
+         !!(G.deeds&&G.deeds[b.id]);
+}
+function ownedBuildings(){
+  var out=[], i;
+  if(!G)return out;
+  for(i=0;i<B.length;i++)if(isMine(B[i]))out.push(B[i]);
+  /* the trade first, then where you live, then everything else, the way
+     Guild 2 files its bar */
+  var RANK={shop:0,shop2:1,home:2,den:3};
+  var idx={}; for(i=0;i<out.length;i++)idx[out[i].id]=i;
+  out.sort(function(a,b){
+    var ra=(RANK[a.kind]!==undefined?RANK[a.kind]:4), rb=(RANK[b.kind]!==undefined?RANK[b.kind]:4);
+    return ra!==rb?ra-rb:idx[a.id]-idx[b.id];
+  });
+  return out;
+}
 function holdings(){
   if(!G)return;
-  var mine=[];
-  for(var i=0;i<B.length;i++){
-    var b=B[i];
-    if(b.id==="shop"){mine.push(b);continue;}          /* the one you started with */
-    if(G.deeds&&G.deeds[b.id])mine.push(b);
-  }
+  var mine=ownedBuildings(), i;
   var h='<div class="sub">'+SEASONS[Math.floor(G.day/DAYS_PER_SEASON)%4]+" &middot; day "+(G.day+1)+
         '</div><h3>What you hold</h3>';
   if(!mine.length){
@@ -1527,15 +1575,18 @@ function holdings(){
         what=TRADES[sh2.trade||G.trade].shop;
         sub="level "+sh2.lvl+" &middot; "+sh2.workers+" hand"+(sh2.workers===1?"":"s")+
             " &middot; "+sh2.store_out+" ready";
-      } else if(G.homeId===b2.id){
+      } else if(G.homeId===b2.id||b2.kind==="home"){
         what="Your residence";
         sub="rests "+restQuality(b2)+" a night";
+      } else if(b2.kind==="den"){
+        what="Your den";
+        sub="nobody on the street will say whose";
       } else {
         rent+=deedRent(b2);
         what="Let to a family";
         sub=fmt(deedRent(b2))+" a day &middot; worth "+fmt(deedValue(b2));
       }
-      h+='<tr><td colspan="2">'+buildingIcon(b2)+
+      h+='<tr><td colspan="2">'+bldPicHTML(b2,'width:64px;height:48px;vertical-align:middle;margin-right:9px')+
          '<span style="display:inline-block;vertical-align:middle">'+
          '<b>'+esc(b2.n||what)+'</b><br><span class="fine">'+what+' &middot; '+sub+'</span></span></td></tr>';
     }
@@ -1559,6 +1610,284 @@ function holdings(){
   $("veil").classList.add("on");
 }
 function closeSheet(){var v=$("veil");if(v)v.classList.remove("on");}
+/* ── the holdings bar ─────────────────────────────────────────────────
+   Guild 2's bottom bar: a picture of every building you hold, in a row,
+   and a tap on one takes you there. The pictures are not drawings of
+   buildings — each one is that building, built by the same archetype code
+   that put it in the town, rendered on its own through the game's own
+   shader into a small offscreen target and read back as an image. A
+   burnt-out house shows burnt, a workshop you have extended shows bigger,
+   and a winter roof shows snow, because nothing here is a stand-in.
+
+   Rules it keeps so it cannot break the frame:
+     - nothing is drawn into the town's own mesh: the building is built
+       into a private list through GEOTARGET, the same redirect the flags
+       already use, and every piece of world state it touches is put back;
+     - one picture per call, so a town of deeds never stalls a frame;
+     - the framebuffer and viewport are restored however the render ends;
+     - an empty or failed render is written to Trace and the plain drawn
+       icon stands in, rather than a blank tile nobody can explain. */
+var BTHUMB={};
+var THUMB={fb:null,tex:null,rb:null,batch:null,w:256,h:192,failed:0};
+function thumbKey(b){
+  return [b.kind,b.n||"",(+b.w).toFixed(2),(+b.d).toFixed(2),(+b.h).toFixed(2),
+          b.__burnt?1:0,(SEASONCOL&&SEASONCOL.snow)?1:0,b.tradeId||"",
+          String(b.wall),String(b.roof)].join("|");
+}
+/* the building, and only the building, exactly as buildGeo would make it */
+function bldFaces(b){
+  var snow=!!(SEASONCOL&&SEASONCOL.snow);
+  var wl=b.wall||[196,184,160], rf=b.roof||[104,68,46];
+  if(snow)rf=mixc(rf,[196,206,216],.62);
+  if(b.kind==="shop2"&&b.tradeId&&TRADES[b.tradeId]){
+    wl=TRADES[b.tradeId].wall;
+    rf=snow?mixc(TRADES[b.tradeId].roof,[196,206,216],.62):TRADES[b.tradeId].roof;
+  }
+  if(b.__burnt){wl=[52,44,40];rf=[30,26,24];}
+  var out=[], cy=CURY, ct=CURTILE;
+  GEOTARGET=out;
+  try{ CURY=(b.y||0); buildArch(b,wl,rf,2); }
+  finally{ GEOTARGET=null; CURY=cy; CURTILE=ct; }
+  return out;
+}
+function thumbInit(){
+  if(THUMB.fb)return true;
+  if(THUMB.failed||!gl||!GLOK)return false;
+  try{
+    THUMB.tex=gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D,THUMB.tex);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,THUMB.w,THUMB.h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    THUMB.rb=gl.createRenderbuffer();
+    gl.bindRenderbuffer(gl.RENDERBUFFER,THUMB.rb);
+    gl.renderbufferStorage(gl.RENDERBUFFER,gl.DEPTH_COMPONENT16,THUMB.w,THUMB.h);
+    THUMB.fb=gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER,THUMB.fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,THUMB.tex,0);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,THUMB.rb);
+    var ok=gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE;
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+    if(!ok){THUMB.fb=null;THUMB.failed=1;trace("THUMB: offscreen target refused, plain icons only");return false;}
+    THUMB.batch=glMakeBatch();
+    return true;
+  }catch(e){
+    try{gl.bindFramebuffer(gl.FRAMEBUFFER,null);}catch(e2){}
+    THUMB.fb=null;THUMB.failed=1;
+    trace("THUMB: offscreen target failed ("+(e&&e.message)+"), plain icons only");
+    return false;
+  }
+}
+/* where to stand: in front of the door, turned so two walls show, a little
+   above the eaves — and the frame fitted to the building's own outline */
+function thumbCamera(b,faces){
+  var mn=[1e9,1e9,1e9],mx=[-1e9,-1e9,-1e9],i,j,q;
+  for(i=0;i<faces.length;i++)for(j=0;j<faces[i].p.length;j++){
+    q=faces[i].p[j];
+    if(q[0]<mn[0])mn[0]=q[0]; if(q[0]>mx[0])mx[0]=q[0];
+    if(q[1]<mn[1])mn[1]=q[1]; if(q[1]>mx[1])mx[1]=q[1];
+    if(q[2]<mn[2])mn[2]=q[2]; if(q[2]>mx[2])mx[2]=q[2];
+  }
+  var c=[(mn[0]+mx[0])/2,(mn[1]+mx[1])/2,(mn[2]+mx[2])/2];
+  var R=Math.hypot(mx[0]-mn[0],mx[1]-mn[1],mx[2]-mn[2])||1;
+  /* the archetypes put the door on whichever face the door point is most
+     nearly square to, so the camera does the same — aiming at the raw
+     door point landed side-on to it and pictured a blank gable end */
+  var ddx=(b.dx===undefined?0:b.dx-b.x), ddz=(b.dz===undefined?1:b.dz-b.z);
+  var fx=0, fz=0;
+  if(Math.abs(ddz)>=Math.abs(ddx))fz=(ddz>0?1:-1); else fx=(ddx>0?1:-1);
+  var az=Math.atan2(fx,fz)+0.62, el=0.50, D=R*2.5;
+  var eye=[c[0]+Math.sin(az)*Math.cos(el)*D, c[1]+Math.sin(el)*D, c[2]+Math.cos(az)*Math.cos(el)*D];
+  var view=m4look(eye,c,[0,1,0]);
+  var lx=1e9,hx=-1e9,ly=1e9,hy=-1e9,lz=1e9,hz=-1e9;
+  for(i=0;i<faces.length;i++)for(j=0;j<faces[i].p.length;j++){
+    q=faces[i].p[j];
+    var vx=view[0]*q[0]+view[4]*q[1]+view[8]*q[2]+view[12];
+    var vy=view[1]*q[0]+view[5]*q[1]+view[9]*q[2]+view[13];
+    var vz=view[2]*q[0]+view[6]*q[1]+view[10]*q[2]+view[14];
+    if(vx<lx)lx=vx; if(vx>hx)hx=vx; if(vy<ly)ly=vy; if(vy>hy)hy=vy; if(vz<lz)lz=vz; if(vz>hz)hz=vz;
+  }
+  var asp=THUMB.w/THUMB.h, w=(hx-lx)*1.10, h=(hy-ly)*1.10, ccx=(lx+hx)/2, ccy=(ly+hy)/2;
+  if(w/h>asp)h=w/asp; else w=h*asp;
+  var proj=m4ortho(ccx-w/2,ccx+w/2,ccy-h/2,ccy+h/2,-hz-1,-lz+1);
+  /* the light comes from over the viewer's left shoulder, so every picture
+     is lit the same way whichever way its building faces in the town */
+  var f=[c[0]-eye[0],c[1]-eye[1],c[2]-eye[2]], fL=Math.hypot(f[0],f[1],f[2])||1;
+  f=[f[0]/fL,f[1]/fL,f[2]/fL];
+  var rt=[f[1]*0-f[2]*1, f[2]*0-f[0]*0, f[0]*1-f[1]*0], rL=Math.hypot(rt[0],rt[1],rt[2])||1;
+  rt=[rt[0]/rL,rt[1]/rL,rt[2]/rL];
+  var sun=[-f[0]*0.55-rt[0]*0.45, -f[1]*0.55-rt[1]*0.45+0.70, -f[2]*0.55-rt[2]*0.45];
+  var sL=Math.hypot(sun[0],sun[1],sun[2])||1;
+  return {vp:m4mul(proj,view),eye:eye,sun:[sun[0]/sL,sun[1]/sL,sun[2]/sL]};
+}
+function thumbRender(b){
+  if(!thumbInit())return null;
+  var faces=bldFaces(b); if(!faces.length)return null;
+  var op=[],i;
+  for(i=0;i<faces.length;i++){
+    var f=faces[i], m=f.win?2:(f.em?4:0);
+    op.push({p:f.p,c:f.c,m:m,tile:(m===0?f.tile:-1),n:f.n});
+  }
+  var C=thumbCamera(b,faces);
+  var px=new Uint8Array(THUMB.w*THUMB.h*4);
+  try{
+    glBuild(op,THUMB.batch);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,THUMB.fb);
+    gl.viewport(0,0,THUMB.w,THUMB.h);
+    gl.clearColor(0,0,0,0);
+    gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.disable(gl.BLEND);gl.depthMask(true);
+    gl.useProgram(glProg);
+    gl.uniformMatrix4fv(GLLOC.uVP,false,C.vp);
+    gl.uniform3fv(GLLOC.uSun,new Float32Array(C.sun));
+    gl.uniform3fv(GLLOC.uSunCol,new Float32Array([0.62,0.60,0.53]));
+    gl.uniform3fv(GLLOC.uAmb,new Float32Array([0.40,0.42,0.50]));
+    gl.uniform3fv(GLLOC.uSkyAmb,new Float32Array([0.21,0.26,0.38]));
+    gl.uniform3fv(GLLOC.uGrdAmb,new Float32Array([0.12,0.12,0.08]));
+    gl.uniform3fv(GLLOC.uFog,new Float32Array([0,0,0]));
+    gl.uniform1f(GLLOC.uFogN,1e5); gl.uniform1f(GLLOC.uFogF,2e5);
+    gl.uniform3fv(GLLOC.uEye,new Float32Array(C.eye));
+    gl.uniform1f(GLLOC.uLitWin,0);
+    gl.uniform1f(GLLOC.uShadowOn,0);
+    gl.uniformMatrix4fv(GLLOC.uSunVP,false,C.vp);
+    gl.uniform3fv(GLLOC.uTorches,new Float32Array(48));
+    gl.uniform1f(GLLOC.uTorchCount,0);
+    gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,glShadowTex||glTex);gl.uniform1i(GLLOC.uShadowMap,1);
+    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,glTex);gl.uniform1i(GLLOC.uTex,0);
+    glDrawBatch(THUMB.batch);
+    gl.readPixels(0,0,THUMB.w,THUMB.h,gl.RGBA,gl.UNSIGNED_BYTE,px);
+  } finally {
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+    if(tcv)gl.viewport(0,0,tcv.width,tcv.height);
+  }
+  /* GL reads bottom row first; the page wants the top row first */
+  var W=THUMB.w,H=THUMB.h,full=document.createElement("canvas");
+  full.width=W; full.height=H;
+  var fx=full.getContext("2d"); if(!fx)return null;
+  var img=fx.createImageData(W,H), d=img.data, lit=0, y, x, minX=W, maxX=-1, baseY=-1;
+  for(y=0;y<H;y++){
+    var src=(H-1-y)*W*4, dst=y*W*4;
+    for(x=0;x<W*4;x++)d[dst+x]=px[src+x];
+    for(x=0;x<W;x++)if(d[dst+x*4+3]){lit++; if(x<minX)minX=x; if(x>maxX)maxX=x; baseY=y;}
+  }
+  if(lit<60)return null;
+  fx.putImageData(img,0,0);
+  /* half size with smoothing is the anti-aliasing the target does not
+     have, and a soft shadow under the footing stops it floating */
+  var out=document.createElement("canvas"); out.width=W/2; out.height=H/2;
+  var o=out.getContext("2d"); if(!o)return null;
+  var sx=(minX+maxX)/4, sy=Math.min(H/2-3,baseY/2-2), rx=Math.max(8,(maxX-minX)/4*0.62);
+  o.save(); o.translate(sx,sy); o.scale(1,0.22);
+  var gr=o.createRadialGradient(0,0,0,0,0,rx);
+  gr.addColorStop(0,"rgba(0,0,0,0.55)"); gr.addColorStop(1,"rgba(0,0,0,0)");
+  o.fillStyle=gr; o.beginPath(); o.arc(0,0,rx,0,6.2832); o.fill(); o.restore();
+  o.imageSmoothingEnabled=true; try{o.imageSmoothingQuality="high";}catch(e){}
+  o.drawImage(full,0,0,W/2,H/2);
+  return out.toDataURL("image/png");
+}
+/* one picture per call, oldest-missing first */
+function thumbPump(){
+  if(!G||!GLOK||!gl||GLDIRTY||THUMB.failed)return false;
+  var L=ownedBuildings();
+  for(var i=0;i<L.length;i++){
+    var b=L[i], k=thumbKey(b), t=BTHUMB[b.id];
+    if(t&&t.key===k)continue;
+    var url=null;
+    try{ url=thumbRender(b); }
+    catch(e){ url=null; trace("THUMB: "+b.id+" threw "+(e&&e.message)); }
+    if(!url)trace("THUMB: "+b.id+" drew nothing, plain icon used");
+    BTHUMB[b.id]={key:k,url:url};
+    return true;
+  }
+  return false;
+}
+/* a house you hold only for the rent: not your trade, not where you sleep,
+   not a den, and nothing put to work in it. These are the ones that pile
+   up, so the bar packs them four to a place. */
+function isRentDeed(b){
+  return !!(b&&G&&G.deeds&&G.deeds[b.id])&&b.kind!=="shop"&&b.kind!=="shop2"&&
+         b.kind!=="home"&&b.kind!=="den"&&G.homeId!==b.id&&!shopAt(b.id);
+}
+function bldPicHTML(b,style){
+  var t=BTHUMB[b.id];
+  if(t&&t.url&&t.key===thumbKey(b))
+    return '<img src="'+t.url+'" alt="" style="display:inline-block;object-fit:contain;'+(style||"")+'">';
+  return buildingIcon(b);
+}
+/* A tap on a picture is a tap on that building in the town: one walks you
+   to its door, a second straight after goes in (or asks after the deed) —
+   the same code the city view runs, not a copy of it. */
+function bbarTap(id){
+  if(!G||G.over||inRoom())return;
+  for(var i=0;i<B.length;i++)if(B[i].id===id){tapBuildingAct(B[i]);layout();return;}
+}
+var BBARKEY="";
+function drawBBar(){
+  var el=$("bbar"); if(!el)return;
+  var game=$("game");
+  var show=!!(G&&!G.over&&!inRoom()&&game&&game.style.display!=="none");
+  if(!show){
+    if(el.classList.contains("on"))el.classList.remove("on");
+    return;
+  }
+  thumbPump();
+  var L=ownedBuildings(), nb=nearest(), hereId=nb?nb.id:"";
+  var key=hereId+"|"+L.map(function(b){
+    var t=BTHUMB[b.id];
+    return b.id+":"+(t&&t.url&&t.key===thumbKey(b)?t.key:"-")+":"+(fireOn(b.id)?1:0)+":"+(isRentDeed(b)?1:0);
+  }).join(",");
+  if(key!==BBARKEY){
+    BBARKEY=key;
+    var h="", deeds=[], i;
+    var pic=function(b){
+      var t=BTHUMB[b.id];
+      if(t&&t.url&&t.key===thumbKey(b))return '<img src="'+t.url+'" alt="">';
+      return '<div class="bic">'+buildingIcon(b)+'</div>';
+    };
+    var mark=function(b){return (b.id===hereId?" here":"")+(fireOn(b.id)?" fire":"");};
+    for(i=0;i<L.length;i++){
+      var b=L[i];
+      if(isRentDeed(b)){deeds.push(b);continue;}
+      h+='<button class="bi'+mark(b)+'" onclick="bbarTap(\''+b.id+'\')" aria-label="'+esc(b.n||"")+
+         '" title="'+esc(b.n||"")+'">'+pic(b)+'</button>';
+    }
+    /* four rented houses to one place: each quarter is its own house and
+       its own tap, so nothing is hidden behind a second step */
+    for(i=0;i<deeds.length;i+=4){
+      h+='<div class="bi pack">';
+      for(var q=i;q<Math.min(i+4,deeds.length);q++){
+        var d=deeds[q];
+        h+='<button class="bq'+mark(d)+'" onclick="bbarTap(\''+d.id+'\')" aria-label="'+esc(d.n||"")+
+           '" title="'+esc(d.n||"")+'">'+pic(d)+'</button>';
+      }
+      h+='</div>';
+    }
+    el.innerHTML=h;
+  }
+  if(!el.classList.contains("on"))el.classList.add("on");
+  bbarFit(el);
+}
+/* the pictures stand on the bottom row of the city view, clear of any
+   control that also sits on that row, whichever side it is on; if the gap
+   is too narrow for even one picture they stand just above the row */
+function bbarFit(el){
+  var st=el.parentNode; if(!st||!st.getBoundingClientRect)return;
+  var R=st.getBoundingClientRect(); if(!R.width)return;
+  var L=8, Rt=8, rowTop=R.bottom, ctl=[st.querySelector(".speed"),$("clock")];
+  for(var i=0;i<ctl.length;i++){
+    var c=ctl[i]; if(!c||!c.getBoundingClientRect)continue;
+    var r=c.getBoundingClientRect(); if(!r.width)continue;
+    if(r.bottom<R.bottom-R.height*0.25)continue;      /* not on this row */
+    rowTop=Math.min(rowTop,r.top);
+    if((r.left+r.right)/2<R.left+R.width/2)L=Math.max(L,r.right-R.left+8);
+    else Rt=Math.max(Rt,R.right-r.left+8);
+  }
+  var one=(el.firstChild&&el.firstChild.getBoundingClientRect)?el.firstChild.getBoundingClientRect().width:60;
+  if(R.width-L-Rt>=one){ el.style.left=L+"px"; el.style.right=Rt+"px"; el.style.bottom=""; }
+  else { el.style.left="8px"; el.style.right="8px"; el.style.bottom=(R.bottom-rowTop+4)+"px"; }
+}
 function deedSheet(b){
   if(!b||b.kind!=="town")return;
   var owned=!!(G.deeds&&G.deeds[b.id]);
@@ -8110,8 +8439,7 @@ function buildGeo(){
        property from the town's. Everything you hold flies the same big
        red flag: your trade house, your home, every deed you have bought
        and everything you have built. */
-    var mine=(b.kind==="shop"||b.kind==="shop2"||b.kind==="home"||b.kind==="den"||
-              (G.deeds&&G.deeds[b.id]));
+    var mine=isMine(b);
     /* your own colour, not a copy of the tavern's -- the two used to be
        within a few shades of the same red, so a den you had just built
        and the inn across the square read as the same flag from any
@@ -10633,6 +10961,91 @@ var GLB_ROLE_SETS={
   "guard-m": ["gild_ranger"],
   "guard-f": ["gild_ranger_f"]
 };
+/* Those four lists were the whole cast, so a fourth man loaded through the
+   picker was stored, parsed and never worn by anybody. A rigged, animated
+   figure is now cast by its name the way the livestock already are: a
+   ranger, guard, knight or soldier walks the watch, anything else human
+   walks the streets, and the female markers the face painter already uses
+   decide which list. Adding people is dropping files in -- no edit here. */
+/* A figure on the shared skeleton that came with no animations of its
+   own -- the Quaternius base bodies and outfits ship that way -- borrows
+   the idle and the walk from one that has them. Rotations carry over as
+   they are; the borrower keeps its own bone lengths, so only the pelvis
+   travels, scaled to the borrower's own leg length, and a taller or
+   shorter body walks on its own legs instead of the donor's. The array is
+   filled in place so the cheap distance copy, which shares it, sees the
+   clips too. */
+function glbJointKey(ch,j){
+  var s=ch.skins[0], nm=((ch.nodes[s.joints[j]]||{}).name||"").toLowerCase();
+  return nm||("#"+j);
+}
+function glbShareClips(){
+  var names=glbImportedNames(), donors=[], i, n, c;
+  for(i=0;i<names.length;i++){ c=GLB_IMPORTED[names[i]];
+    if(c&&c.skins&&c.skins.length&&c.animations&&c.animations.length&&!c._borrowed)donors.push(names[i]); }
+  for(i=0;i<names.length;i++){
+    n=names[i]; c=GLB_IMPORTED[n];
+    if(!c||!c.skins||!c.skins.length||(c.animations&&c.animations.length))continue;
+    var BJ=c.skins[0].joints, donor=null;
+    for(var d=0;d<donors.length&&!donor;d++){
+      var D=GLB_IMPORTED[donors[d]], DJ=D.skins[0].joints;
+      if(DJ.length!==BJ.length)continue;
+      var same=true;
+      for(var j=0;j<BJ.length&&same;j++){
+        var a=glbJointKey(c,j), b=glbJointKey(D,j);
+        if(a.charAt(0)!=="#"&&b.charAt(0)!=="#"&&a!==b)same=false;
+      }
+      if(same)donor=donors[d];
+    }
+    if(!donor)continue;
+    var Dc=GLB_IMPORTED[donor], DJ2=Dc.skins[0].joints, slot={};
+    for(var q=0;q<DJ2.length;q++)slot[DJ2[q]]=q;
+    var pelvis=-1;
+    for(q=0;q<BJ.length;q++)if(glbJointKey(c,q)==="pelvis"||(glbJointKey(c,q)==="#1"&&pelvis<0))pelvis=q;
+    if(!c.animations)c.animations=[];
+    Dc.animations.forEach(function(A){
+      var chs=[];
+      A.channels.forEach(function(C){
+        var jq=slot[C.node]; if(jq===undefined)return;
+        var node=BJ[jq];
+        if(C.path==="translation"){
+          if(jq!==pelvis)return;          /* keep the borrower's own proportions */
+          var bt=c.nodes[node].t, dt=Dc.nodes[C.node].t;
+          var r=(Math.hypot(bt[0],bt[1],bt[2])||1)/(Math.hypot(dt[0],dt[1],dt[2])||1);
+          var vals=new Float32Array(C.values.length);
+          for(var v=0;v<vals.length;v++)vals[v]=C.values[v]*r;
+          chs.push({node:node,path:C.path,times:C.times,values:vals});
+        } else chs.push({node:node,path:C.path,times:C.times,values:C.values});
+      });
+      c.animations.push({name:A.name,channels:chs});
+    });
+    c._borrowed=donor;
+    delete GLB_CLIP_CACHE[n+"|walk"]; delete GLB_CLIP_CACHE[n+"|idle"];
+    glbLog(n+": no clips of its own, walks and idles as "+donor);
+  }
+}
+var GLB_GUARD_RE=/(^|_)(ranger|guard|knight|soldier|watch|sentry|militia|man_at_arms)/i;
+var GLB_FEMALE_RE=/woman|_f($|[^a-z])|female|girl|wife|maid|lady|nun/i;
+var GLB_ROLE_CACHE={n:-1,sets:null};
+function glbRoleSet(key){
+  var names=glbImportedNames();
+  if(GLB_ROLE_CACHE.n!==names.length||!GLB_ROLE_CACHE.sets){
+    try{ glbShareClips(); }catch(e){ glbLog("clip sharing failed: "+(e&&e.message)); }
+    var sets={}, k;
+    for(k in GLB_ROLE_SETS)sets[k]=GLB_ROLE_SETS[k].slice();
+    for(var i=0;i<names.length;i++){
+      var n=names[i], c=GLB_IMPORTED[n];
+      if(!c||!c.skins||!c.skins.length||!c.animations||!c.animations.length)continue;
+      var beast=false;
+      for(k in GLB_BEAST_KINDS)if(GLB_BEAST_KINDS[k].test(n)){beast=true;break;}
+      if(beast)continue;
+      var role=(GLB_GUARD_RE.test(n)?"guard-":"walker-")+(GLB_FEMALE_RE.test(n)?"f":"m");
+      if(sets[role].indexOf(n)<0)sets[role].push(n);
+    }
+    GLB_ROLE_CACHE={n:names.length,sets:sets};
+  }
+  return GLB_ROLE_CACHE.sets[key]||[];
+}
 /* Livestock is matched by what the file is OF, not by an exact name, so
    whatever an asset pack calls its cow -- gild_cow, gild_brahma,
    gild_cattle -- registers itself. Nothing here needs editing to add a
@@ -10674,16 +11087,16 @@ function glbMarkSex(){
 }
 function glbForRole(role,gender,uid){
   var key=(role==="guard"?"guard-":"walker-")+(gender?"f":"m");
-  var have=(GLB_ROLE_SETS[key]||[]).filter(function(n){return GLB_IMPORTED[n];});
+  var have=glbRoleSet(key).filter(function(n){return GLB_IMPORTED[n];});
   if(have.length)return have[(uid||0)%have.length];
   /* nothing for this sex: take the other sex's set rather than dropping
      to a procedural figure standing beside real ones */
   var other=(role==="guard"?"guard-":"walker-")+(gender?"m":"f");
-  var alt=(GLB_ROLE_SETS[other]||[]).filter(function(n){return GLB_IMPORTED[n];});
+  var alt=glbRoleSet(other).filter(function(n){return GLB_IMPORTED[n];});
   if(alt.length)return alt[(uid||0)%alt.length];
   /* a guard with no ranger loaded still looks better as a townsman */
   if(role==="guard"){
-    var any=(GLB_ROLE_SETS["walker-"+(gender?"f":"m")]||[]).concat(GLB_ROLE_SETS["walker-"+(gender?"m":"f")]||[])
+    var any=glbRoleSet("walker-"+(gender?"f":"m")).concat(glbRoleSet("walker-"+(gender?"m":"f")))
       .filter(function(n){return GLB_IMPORTED[n];});
     if(any.length)return any[(uid||0)%any.length];
   }
@@ -10874,7 +11287,7 @@ function glbLook(uid){
   return { up:pick(GARB_UPPER,0x9E37), lo:pick(GARB_LOWER,0x85EB), bt:pick(GARB_BOOT,0xC2B2),
            hair:pick(HAIRCOL,0x27D4), skin:SKINCOLORS[(h(uid||1,0x165667)>>>0)%SKINCOLORS.length],
            tall:0.94+((h(uid||1,0xD3A2)>>>0)%1000)/1000*0.13,
-           girth:0.94+((h(uid||1,0x4F1B)>>>0)%1000)/1000*0.14 };
+           girth:0.97+((h(uid||1,0x4F1B)>>>0)%1000)/1000*0.06 };
 }
 /* recolour a triangle toward a target while keeping the model's own
    shading: the baked colour carries the light and the folds, so the part
@@ -10896,7 +11309,79 @@ function glbTint(uid){
            (1+Math.cos(hueA-2.094)*amp)*val,
            (1+Math.cos(hueA+2.094)*amp)*val ];
 }
-function glbPlace(op,ch,posed,x,z,gy,hx,hz,uid){
+/* ── build: lean to fat on the one skeleton ──────────────────────────
+   Girth used to scale the whole figure sideways -- head, hands and feet
+   included -- so a "heavy" man was just a wide man, and over the range it
+   was allowed (6 to 8 per cent) nobody could see it at all. A body carries
+   weight in particular places: the belly, the hips and seat, the thighs,
+   the upper arms and the neck, and hardly at all in the hands, feet or
+   skull. So each vertex gets a weight for how much it fattens, read off
+   the bones that move it, and a person's build pushes the skin out along
+   its own normal by that much -- a belly forward more than a back -- at
+   draw time, from the shared cached pose, so it costs no extra memory and
+   every one of the skeleton's figures can be any build at all. Measured on
+   gild_man: 2761 vertices, all welded, so pushing along the normal opens
+   no seams. */
+var GLB_FAT_JOINT={pelvis:1.0,spine_01:1.0,spine_02:0.95,spine_03:0.6,neck_01:0.45,head:0.10,
+  clavicle_l:0.35,clavicle_r:0.35,upperarm_l:0.55,upperarm_r:0.55,lowerarm_l:0.28,lowerarm_r:0.28,
+  thigh_l:0.85,thigh_r:0.85,calf_l:0.40,calf_r:0.40};
+/* the same skeleton with its names stripped, by joint index */
+var GLB_FAT_INDEX={1:1.0,2:1.0,3:0.95,4:0.6,5:0.45,6:0.10,7:0.35,31:0.35,8:0.55,32:0.55,
+  9:0.28,33:0.28,55:0.85,60:0.85,56:0.40,61:0.40};
+var GLB_FAT_BELLY={pelvis:1,spine_01:1,spine_02:1};
+var GLB_FAT_MAX=0.085;      /* metres of push at full weight on the fattest build */
+function glbFatW(ch){
+  var prim=ch.meshes[0][0];
+  if(prim._fatW!==undefined)return prim._fatW;
+  prim._fatW=null;
+  var skin=ch.skins&&ch.skins[0]; if(!skin)return null;
+  var J=skin.joints, per=new Float32Array(J.length), belly=new Uint8Array(J.length), named=0, human=0, j;
+  for(j=0;j<J.length;j++){
+    var nm=((ch.nodes[J[j]]||{}).name||"").toLowerCase();
+    if(!nm)continue;
+    named++;
+    if(GLB_FAT_JOINT[nm]!==undefined){per[j]=GLB_FAT_JOINT[nm];human++;}
+    if(GLB_FAT_BELLY[nm])belly[j]=1;
+  }
+  if(!named){
+    /* only the shared 65-joint human skeleton is safe to read by index */
+    if(J.length!==65)return null;
+    for(var k in GLB_FAT_INDEX)per[+k]=GLB_FAT_INDEX[k];
+    belly[1]=belly[2]=belly[3]=1; human=1;
+  }
+  if(!human)return null;                 /* a cow, a horse, a prop */
+  var nv=prim.nv, out=new Float32Array(nv), any=false;
+  for(var i=0;i<nv;i++){
+    var w=0, bw=0;
+    if(prim.joint!==undefined){ w=per[prim.joint[i]]; bw=belly[prim.joint[i]]; }
+    else for(var q=0;q<4;q++){
+      var wt=prim.weight4[i*4+q]; if(wt<=0)continue;
+      var jj=prim.joint4[i*4+q]; w+=per[jj]*wt; bw+=belly[jj]*wt;
+    }
+    /* +Z is the way the figure faces: a belly goes forward, not back */
+    var nz=prim.nrm[i*3+2];
+    if(bw>0)w*=1+bw*(nz>0?0.60*nz:0.30*nz);
+    out[i]=w; if(w>0)any=true;
+  }
+  prim._fatW=any?out:null;
+  return prim._fatW;
+}
+/* who is built how: most people ordinary, a real share of them thick-set,
+   a few properly fat, a few lean. Stable per person, like their clothes.
+   The watch is drawn from fit men. */
+function glbBuild(uid,guard){
+  var s=(((uid||1)*2654435761)>>>0)^0x5bd1e995; s=(s^(s>>>15))>>>0;
+  s=Math.imul(s,0x2c1b3c6d)>>>0; s=(s^(s>>>12))>>>0;
+  var u=(s%10000)/10000, v=((s>>>14)%1000)/1000, b;
+  if(u<0.14)b=-0.22+v*0.12;          /* lean     */
+  else if(u<0.58)b=-0.08+v*0.20;     /* ordinary */
+  else if(u<0.80)b=0.22+v*0.20;      /* stout    */
+  else if(u<0.93)b=0.50+v*0.22;      /* heavy    */
+  else b=0.82+v*0.18;                /* fat      */
+  if(guard)b=Math.max(-0.10,Math.min(0.35,b));
+  return b;
+}
+function glbPlace(op,ch,posed,x,z,gy,hx,hz,uid,build){
   var hl=Math.hypot(hx,hz)||1; hx/=hl; hz/=hl;
   var rx=hz, rz=-hx;
   var prim=ch.meshes[0][0], P=posed.pos, N=posed.nrm, idx=prim.indices, tc=prim.triColor;
@@ -10913,10 +11398,13 @@ function glbPlace(op,ch,posed,x,z,gy,hx,hz,uid){
      every townsman would need his own cache entry. Height scales Y, girth
      scales the two ground axes, both mild: a crowd reads as a crowd from a
      distance because the silhouettes differ, long before the colours do. */
-  if(LOOK.tall!==1||LOOK.girth!==1){
+  var FW=build?glbFatW(ch):null, FD=(build||0)*GLB_FAT_MAX;
+  if(LOOK.tall!==1||LOOK.girth!==1||(FW&&FD)){
     var _sp=new Float32Array(P.length);
-    for(var _i=0;_i+2<P.length;_i+=3){
-      _sp[_i]=P[_i]*LOOK.girth; _sp[_i+1]=P[_i+1]*LOOK.tall; _sp[_i+2]=P[_i+2]*LOOK.girth;
+    for(var _i=0,_v=0;_i+2<P.length;_i+=3,_v++){
+      var _x=P[_i],_y=P[_i+1],_z=P[_i+2];
+      if(FW&&FD){ var _f=FW[_v]*FD; if(_f){ _x+=N[_i]*_f; _y+=N[_i+1]*_f; _z+=N[_i+2]*_f; } }
+      _sp[_i]=_x*LOOK.girth; _sp[_i+1]=_y*LOOK.tall; _sp[_i+2]=_z*LOOK.girth;
     }
     P=_sp;
   }
@@ -11016,7 +11504,11 @@ function glbDrawFigure(op,which,x,z,gy,hx,hz,walkT,gaitAmp,weapon,uid,kid,helm,s
     if(lc){useCh=lc;useKey=which+"#lod";}
   }
   var posed=glbPosed(useKey,useCh,clip,t,kid);
-  glbPlace(op,useCh,posed,x,z,gy,hx,hz,uid);
+  /* townsfolk and the watch have a build; the player, children and beasts
+     are drawn as they come */
+  var build=0;
+  if(subj&&!kid)build=glbBuild(uid,!!(G&&G.guards&&G.guards.indexOf(subj)>=0));
+  glbPlace(op,useCh,posed,x,z,gy,hx,hz,uid,build);
   /* a child carries nothing, and the grip offsets are adult-sized anyway.
      Props hang off the full skeleton's matrices, which the cheap copy
      shares, so they are unaffected by the swap. */
@@ -18150,7 +18642,7 @@ function layout(){
     soB.textContent=(G&&G.scene==="gaol"&&G.gaolDays>0)?
       ("Sit it out \u00b7 "+G.gaolDays+" day"+(G.gaolDays===1?"":"s")):"Step outside";
   }
-  drawHere(); drawCheats();
+  drawHere(); drawCheats(); drawBBar();
 }
 
 /* ════════════════ LOOP ════════════════ */
@@ -18186,8 +18678,19 @@ function loop(ts){
     if(!LOWQ&&LOWQSTRIKES>=4){LOWQ=true;LOWQSTRIKES=0;buildGeo();}
     else if(LOWQ&&LOWQSTRIKES===0&&mean<ceil2*0.55){LOWQ=false;buildGeo();}
   }
-  if(G&&!G.over&&speed>0&&Math.floor(ts/500)!==Math.floor((ts-dt*1000)/500))layout();
+  /* The HUD refresh looked for the half-second boundary between this
+     frame and one dt ago — but dt is capped at a tenth of a second, so any
+     frame slower than that (a busy iPad, a skipped year) could straddle
+     the boundary without the test seeing it, and the coin, the clock and
+     the panel quietly stopped updating. It remembers which half-second it
+     last drew in instead. */
+  if(G&&!G.over&&speed>0&&Math.floor(ts/500)!==LAYOUTB){LAYOUTB=Math.floor(ts/500);layout();}
+  /* the holdings pictures are made here rather than in layout(), which
+     does not run while paused: at most one every dozen frames, and only
+     while one is missing or stale */
+  if(G&&!G.over&&(fIdx%12)===0&&thumbPump())drawBBar();
 }
+var LAYOUTB=-1;
 function startLoop(){
   /* glbCdnLoad restores from IndexedDB first and only then reaches for
      the network, so this covers both the cached and the cold case */
@@ -18238,6 +18741,33 @@ function groundAt(sx,sy){
    the wall is far enough from the centre to lose every comparison, so a
    townsman walking along that wall took the tap instead. This is the real
    question those tests were trying to approximate. */
+/* What a tap on a building does, whether it came from the city view or
+   from the holdings bar: the first walks you to its door, a second within
+   half a second goes in — or, for a house with no door to open, asks after
+   its deed. */
+function tapBuildingAct(best){
+  if(!best||!G)return;
+  /* a second tap on the same building within half a second walks you
+     to the door and straight through it */
+  var nowMs=Date.now();
+  var same=(LASTTAPB===best.id&&nowMs-LASTTAPT<520);
+  LASTTAPB=best.id;LASTTAPT=nowMs;
+  var roomFor={shop:"shop",church:"church",home:"home",court:"court",
+               infirmary:"infirmary",hall:"council"}[best.kind];
+  if(roomFor)G.sceneId=best.id;   /* two spital houses, two casts */
+  if(same&&roomFor){
+    /* a second tap used to teleport you to the door instantly, which
+       read as nothing happening until the room changed under you.
+       It now runs there and goes in when it arrives. */
+    G.enterOn={x:best.dx,z:best.dz,b:best,room:roomFor,
+               until:G.day*DAYH+G.t+0.5};
+    goTo(best.dx,best.dz); G.run=true;
+  } else if(same&&(best.kind==="town"||best.kind==="cottage"||best.kind==="shop2"||best.kind==="rival"||best.kind==="biz")){
+    /* nothing else has a door you can open, but it does have a
+       deed — a second tap asks after it instead of doing nothing */
+    deedSheet(best);
+  } else goTo(best.dx,best.dz);
+}
 function tapHitsBuilding(sx,sy,b){
   if(!b||!b.w||!b.d)return false;
   var a=unproj(sx,sy,-1),c=unproj(sx,sy,1);
@@ -18465,28 +18995,7 @@ function bindCanvas(){
         var dep=tapBuildingDepth(TX,TY,b);
         if(dep<bd){bd=dep;best=b;}
       }
-      if(best){
-        /* a second tap on the same building within half a second walks you
-           to the door and straight through it */
-        var nowMs=Date.now();
-        var same=(LASTTAPB===best.id&&nowMs-LASTTAPT<520);
-        LASTTAPB=best.id;LASTTAPT=nowMs;
-        var roomFor={shop:"shop",church:"church",home:"home",court:"court",
-                     infirmary:"infirmary",hall:"council"}[best.kind];
-        if(roomFor)G.sceneId=best.id;   /* two spital houses, two casts */
-        if(same&&roomFor&&(best.kind!=="court"||true)){
-          /* a second tap used to teleport you to the door instantly, which
-             read as nothing happening until the room changed under you.
-             It now runs there and goes in when it arrives. */
-          G.enterOn={x:best.dx,z:best.dz,b:best,room:roomFor,
-                     until:G.day*DAYH+G.t+0.5};
-          goTo(best.dx,best.dz); G.run=true;
-        } else if(same&&(best.kind==="town"||best.kind==="cottage"||best.kind==="shop2"||best.kind==="rival"||best.kind==="biz")){
-          /* nothing else has a door you can open, but it does have a
-             deed — a second tap asks after it instead of doing nothing */
-          deedSheet(best);
-        } else goTo(best.dx,best.dz);
-      }
+      if(best)tapBuildingAct(best);
       else{
         var g=groundAt(TX,TY);
         if(g){
