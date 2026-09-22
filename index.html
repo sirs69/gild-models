@@ -258,7 +258,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.038</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.041</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -4436,6 +4436,67 @@ function propOnLine(x0,z0,x1,z1){
     for(var j=0;j<b.length;j++){ var q=b[j]; if(BLOCK_IGNORE&&q.tag===BLOCK_IGNORE)continue; if(BLOCK_SOFT&&propSoft(q))continue;
       if(Math.abs(x-q.x)<q.w/2+0.48&&Math.abs(z-q.z)<q.d/2+0.48)return q; } }
   return null;
+}
+/* the house or prop at a point, read through the same grids blockedAt uses */
+function blockerAt(x,z,pad){
+  var i, bl=bGrid().m.get(Math.floor(x/BGCELL)*100003+Math.floor(z/BGCELL));
+  if(bl)for(i=0;i<bl.length;i++){ var b=bl[i]; if(Math.abs(x-b.x)<b.w/2+pad&&Math.abs(z-b.z)<b.d/2+pad)return b; }
+  var pb=propGrid().m.get(Math.floor(x/PROPCELL)*100003+Math.floor(z/PROPCELL));
+  if(pb)for(i=0;i<pb.length;i++){ var q=pb[i]; if(BLOCK_IGNORE&&q.tag===BLOCK_IGNORE)continue;
+    if(Math.abs(x-q.x)<q.w/2+pad&&Math.abs(z-q.z)<q.d/2+pad)return q; }
+  return null;
+}
+/* Measured over a day and a half of play: people who were trying to get
+   somewhere and had not moved a metre in an hour went from none to twenty
+   -- townsfolk and the watch pressed against a cart, a lamp or the corner
+   of a stall for good, because only the stallholders and your own crew had
+   ever been taught to go round anything. Everyone who walks into something
+   now looks a few metres ahead for what stopped him, picks the corner of it
+   that gets him past, and holds to that corner until he has turned it. It
+   costs nothing while the way is clear: it only runs when a step fails. */
+function npcGiveUp(m){
+  /* somewhere else, then: a fresh errand, not the one he cannot reach */
+  try{ var wt=wanderTarget(m); if(wt){ m.tx=wt[0]; m.tz=wt[1]; } }catch(e){}
+  m.leg=null; m.path=null;
+  trace("UNSTUCK: townsman "+(m.uid||"?")+" gave up an errand he could not reach");
+}
+function unstick(m,tx,tz,dt){
+  if(m.dtour){
+    m.dtourT-=dt;
+    if(m.dtourT<=0||Math.hypot(m.dtour[0]-m.x,m.dtour[1]-m.z)<0.7){ m.dtour=null; }
+    else return m.dtour;
+  }
+  return null;
+}
+/* Progress, not a single failed step, is what counts: a man sliding along
+   the face of a cart moves every frame and gets nowhere. Every couple of
+   seconds each walker's progress is checked against where he was; if he
+   has not made most of a metre toward anywhere while meaning to, he picks
+   the corner round whatever is in front of him (or near him); if there is
+   no such corner, or it is the third time, he gives the errand up and goes
+   somewhere else, as a person would. */
+function unstickAfter(m,ox,oz,want,tx,tz,giveUp){
+  var now=G?(G.day*DAYH+G.t)*HOURSEC:0;           /* simulated seconds, whatever the speed */
+  if(m.__cpT===undefined||m.__cpT>now){ m.__cpT=now; m.__cpX=m.x; m.__cpZ=m.z; m.__tries=0; return; }
+  if(Math.hypot(m.x-m.__cpX,m.z-m.__cpZ)>0.9){ m.__cpT=now; m.__cpX=m.x; m.__cpZ=m.z; m.__tries=0; return; }
+  if(now-m.__cpT<2.5)return;
+  m.__cpT=now; m.__cpX=m.x; m.__cpZ=m.z;
+  if(Math.hypot(tx-m.x,tz-m.z)<1.2)return;          /* there, near enough */
+  m.__tries=(m.__tries||0)+1;
+  var q=null, L=Math.hypot(tx-m.x,tz-m.z), n=Math.min(18,Math.ceil(Math.min(L,6)/0.35));
+  for(var i=1;i<=n&&!q;i++){ var t=Math.min(1,i*0.35/Math.max(L,0.001)); q=blockerAt(m.x+(tx-m.x)*t,m.z+(tz-m.z)*t,0.48); }
+  if(!q)q=blockerAt(m.x,m.z,0.9);
+  var dc=(q&&m.__tries<3)?propCorner(q,m.x,m.z,tx,tz):null;
+  if(!dc&&q&&m.__tries<3){                           /* every corner is taken: the nearest open ground by one */
+    var ox2=q.w/2+1.2, oz2=q.d/2+1.2, best=null, bd=1e9;
+    for(var sx=-1;sx<=1;sx+=2)for(var sz=-1;sz<=1;sz+=2){
+      var f=freeSpotNear(q.x+sx*ox2,q.z+sz*oz2,2.2); if(!f)continue;
+      var d=Math.hypot(f[0]-m.x,f[1]-m.z)+Math.hypot(tx-f[0],tz-f[1]); if(d<bd){bd=d;best=f;} }
+    dc=best;
+  }
+  if(dc){ m.dtour=dc; m.dtourT=9; m.leg=null; return; }
+  m.leg=null; m.path=null;
+  if(m.__tries>=3&&giveUp){ giveUp(m); m.__tries=0; m.dtour=null; }
 }
 /* the first thing -- house or prop -- standing across a straight walk */
 function lineBlocker(x0,z0,x1,z1){
@@ -9430,9 +9491,59 @@ function gbEnsure(verts){
   GBC=new Float32Array(cap*3);GBM=new Float32Array(cap*4);
   GBA=new Float32Array(cap);GBCAP=cap;
 }
-function glBuild(faces,batch){
+/* ── the fast lane for figures ─────────────────────────────────────────
+   Profiled in a real browser: the frame was ~118,000 faces, 94,000 of them
+   the loaded figures, and every one was built as a fresh JS object with
+   five arrays in it, every frame, only to be copied into typed arrays by
+   glBuild and thrown away -- half a million allocations a frame, which is
+   what makes a device stutter at random once the collector starts to
+   fall behind. Figure and clothing triangles now go straight into typed
+   arrays of their own and glBuild copies them in one block. The UVs are
+   the same body-locked projection glBuild used for them. With Ink on, the
+   outline pass needs the faces as objects, so they go the old way. */
+var RAW={n:0,cap:0,P:null,N:null,C:null,M:null,A:null,on:false}, RAW_N9=new Float32Array(9);
+function rawEnsure(extra){
+  if(RAW.n+extra<=RAW.cap)return;
+  var cap=Math.max(8192,(RAW.n+extra)*2), n=RAW.n;
+  function g(old,k){ var a=new Float32Array(cap*k); if(old&&n)a.set(old.subarray(0,n*k)); return a; }
+  RAW.P=g(RAW.P,3); RAW.N=g(RAW.N,3); RAW.C=g(RAW.C,3); RAW.M=g(RAW.M,4); RAW.A=g(RAW.A,1); RAW.cap=cap;
+}
+/* one triangle: corners, per-corner normals (9) or null, colour 0-255 or
+   per-corner colours (9, 0-255) or null, texture tile */
+function rawTri(ax,ay,az,bx,by,bz,cx,cy,cz,vn,col,vc,tile){
+  rawEnsure(3);
+  var ux=bx-ax,uy=by-ay,uz=bz-az,wx=cx-ax,wy=cy-ay,wz=cz-az;
+  var nx=uy*wz-uz*wy, ny=uz*wx-ux*wz, nz=ux*wy-uy*wx, nl=Math.hypot(nx,ny,nz)||1; nx/=nl; ny/=nl; nz/=nl;
+  var i3=RAW.n*3, i4=RAW.n*4, P=RAW.P, N=RAW.N, C=RAW.C, M=RAW.M, A=RAW.A;
+  P[i3]=ax;P[i3+1]=ay;P[i3+2]=az; P[i3+3]=bx;P[i3+4]=by;P[i3+5]=bz; P[i3+6]=cx;P[i3+7]=cy;P[i3+8]=cz;
+  if(vn){ for(var q=0;q<9;q++)N[i3+q]=vn[q]; }
+  else { N[i3]=N[i3+3]=N[i3+6]=nx; N[i3+1]=N[i3+4]=N[i3+7]=ny; N[i3+2]=N[i3+5]=N[i3+8]=nz; }
+  if(vc){ for(q=0;q<9;q++)C[i3+q]=vc[q]/255; }
+  else { var r=col[0]/255,g=col[1]/255,b=col[2]/255; C[i3]=C[i3+3]=C[i3+6]=r; C[i3+1]=C[i3+4]=C[i3+7]=g; C[i3+2]=C[i3+5]=C[i3+8]=b; }
+  A[RAW.n]=A[RAW.n+1]=A[RAW.n+2]=1;
+  var t=(tile===undefined||tile<0)?TILE.SKIN:tile, u0,v0,u1,v1,u2,v2;
+  if(t===TILE.SKIN||t===TILE.CLOTH){
+    var sc=(t===TILE.CLOTH)?5.2:2.4, mx=(ax+bx+cx)/3, my=(ay+by+cy)/3, mz=(az+bz+cz)/3, t1x,t1z,t1y=0;
+    if(Math.abs(ny)<0.9){t1x=-nz;t1z=nx;}else{t1x=1;t1z=0;}
+    var tl=Math.hypot(t1x,t1z)||1; t1x/=tl; t1z/=tl;
+    var t2x=ny*t1z-nz*t1y, t2y=nz*t1x-nx*t1z, t2z=nx*t1y-ny*t1x;
+    u0=((ax-mx)*t1x+(az-mz)*t1z)*sc+0.5; v0=((ax-mx)*t2x+(ay-my)*t2y+(az-mz)*t2z)*sc+0.5;
+    u1=((bx-mx)*t1x+(bz-mz)*t1z)*sc+0.5; v1=((bx-mx)*t2x+(by-my)*t2y+(bz-mz)*t2z)*sc+0.5;
+    u2=((cx-mx)*t1x+(cz-mz)*t1z)*sc+0.5; v2=((cx-mx)*t2x+(cy-my)*t2y+(cz-mz)*t2z)*sc+0.5;
+  } else {
+    var s2=TILESCALE[t]||0.4, aX=Math.abs(nx), aY=Math.abs(ny), aZ=Math.abs(nz);
+    if(aY>=aX&&aY>=aZ){u0=ax*s2;v0=az*s2;u1=bx*s2;v1=bz*s2;u2=cx*s2;v2=cz*s2;}
+    else if(aX>=aZ){u0=az*s2;v0=ay*s2;u1=bz*s2;v1=by*s2;u2=cz*s2;v2=cy*s2;}
+    else {u0=ax*s2;v0=ay*s2;u1=bx*s2;v1=by*s2;u2=cx*s2;v2=cy*s2;}
+  }
+  M[i4]=1;M[i4+1]=u0;M[i4+2]=v0;M[i4+3]=t; M[i4+4]=1;M[i4+5]=u1;M[i4+6]=v1;M[i4+7]=t; M[i4+8]=1;M[i4+9]=u2;M[i4+10]=v2;M[i4+11]=t;
+  RAW.n+=3;
+}
+function glBuild(faces,batch,raw){
   var i,k,t,j,need=0;
   for(i=0;i<faces.length;i++){var pn=faces[i].p.length;if(pn>=3)need+=(pn-2)*3;}
+  var rawN=(raw&&raw.n)?raw.n:0;
+  need+=rawN;
   batch.n=need;
   if(!need)return;
   gbEnsure(need);
@@ -9499,7 +9610,10 @@ function glBuild(faces,batch){
         else {GBN[o3]=nx;GBN[o3+1]=ny;GBN[o3+2]=nz;}
         if(vc){var co=vidx*3;GBC[o3]=vc[co]/255;GBC[o3+1]=vc[co+1]/255;GBC[o3+2]=vc[co+2]/255;}
         else {GBC[o3]=r;GBC[o3+1]=g2;GBC[o3+2]=b2;}
-        GBA[vi]=(mat===3)?1:(faceAO!==undefined?faceAO:aoAt(q[0],q[1],q[2],nx,ny,nz));
+        /* the blob shadows under people were 1,300 faces a frame each asking
+           the occlusion grid 27 questions a corner -- 46 ms a frame measured,
+           for a translucent smudge. Translucent faces take no occlusion. */
+        GBA[vi]=(mat===3||mat===5)?1:(faceAO!==undefined?faceAO:aoAt(q[0],q[1],q[2],nx,ny,nz));
         if(mat===1){
           /* a face supplies its own per-corner UVs; everything else keeps
              the procedural projection computed above */
@@ -9513,6 +9627,11 @@ function glBuild(faces,batch){
         vi++;
       }
     }
+  }
+  if(rawN){
+    GBP.set(raw.P.subarray(0,rawN*3),vi*3); GBN.set(raw.N.subarray(0,rawN*3),vi*3); GBC.set(raw.C.subarray(0,rawN*3),vi*3);
+    GBM.set(raw.M.subarray(0,rawN*4),vi*4); GBA.set(raw.A.subarray(0,rawN),vi);
+    vi+=rawN;
   }
   batch.n=vi;
   if(!vi)return;
@@ -11664,6 +11783,18 @@ function glbPlace(op,ch,posed,x,z,gy,hx,hz,uid,build,dress){
         m:1, tile:faceCell, ao:1, glb:1});
       continue;
     }
+    if(RAW.on){
+      var RN=RAW_N9;
+      RN[0]=rx*N[a*3]+hx*N[a*3+2]; RN[1]=N[a*3+1]; RN[2]=rz*N[a*3]+hz*N[a*3+2];
+      RN[3]=rx*N[b*3]+hx*N[b*3+2]; RN[4]=N[b*3+1]; RN[5]=rz*N[b*3]+hz*N[b*3+2];
+      RN[6]=rx*N[c*3]+hx*N[c*3+2]; RN[7]=N[c*3+1]; RN[8]=rz*N[c*3]+hz*N[c*3+2];
+      rawTri(x+rx*P[a*3]+hx*P[a*3+2], gy+P[a*3+1], z+rz*P[a*3]+hz*P[a*3+2],
+             x+rx*P[b*3]+hx*P[b*3+2], gy+P[b*3+1], z+rz*P[b*3]+hz*P[b*3+2],
+             x+rx*P[c*3]+hx*P[c*3+2], gy+P[c*3+1], z+rz*P[c*3]+hz*P[c*3+2],
+             RN, PCOL, vcl?(TGT?glbDyeVC(prim,a,b,c,TGT):[vcl[a*3],vcl[a*3+1],vcl[a*3+2],vcl[b*3],vcl[b*3+1],vcl[b*3+2],vcl[c*3],vcl[c*3+1],vcl[c*3+2]]):null,
+             (tt?tt[ti]:TILE.CLOTH));
+      continue;
+    }
     op.push({
       p:[[x+rx*P[a*3]+hx*P[a*3+2], gy+P[a*3+1], z+rz*P[a*3]+hz*P[a*3+2]],
          [x+rx*P[b*3]+hx*P[b*3+2], gy+P[b*3+1], z+rz*P[b*3]+hz*P[b*3+2]],
@@ -11870,8 +12001,10 @@ function accLegs(G,M,topJ,topY,hemY){
    block with the scalp showing through its corners. The shells are
    finer now and carry the ellipsoid's own smooth normal at every corner,
    so they shade round. */
+var ACC_LOD=false;          /* set while building a far figure's clothes */
 function accShell(G,c,r,keep,col,segA,segE){
-  segA=segA||26; segE=segE||15;
+  segA=segA||(ACC_LOD?11:20); segE=segE||(ACC_LOD?7:11);
+  if(ACC_LOD){ segA=Math.min(segA,11); segE=Math.min(segE,7); }
   function P(i,k){ var az=i/segA*6.2832, el=-1.5708+k/segE*3.1416;
     return [c[0]+r[0]*Math.cos(el)*Math.sin(az), c[1]+r[1]*Math.sin(el), c[2]+r[2]*Math.cos(el)*Math.cos(az)]; }
   function N(p){ var nx=(p[0]-c[0])/(r[0]*r[0]), ny=(p[1]-c[1])/(r[1]*r[1]), nz=(p[2]-c[2])/(r[2]*r[2]), l=Math.hypot(nx,ny,nz)||1;
@@ -11895,13 +12028,13 @@ function accBox(G,c,h,col){
 }
 /* a ring (brim) or a drum (crown) round a vertical axis */
 function accRing(G,c,y,r0,r1,dy,col,seg){
-  seg=seg||16;
+  seg=seg||16; if(ACC_LOD)seg=Math.min(seg,8);
   for(var i=0;i<seg;i++){ var a=i/seg*6.2832,b=(i+1)/seg*6.2832;
     var p=function(t,r,yy){return [c[0]+Math.sin(t)*r[0],yy,c[2]+Math.cos(t)*r[1]];};
     accQuad(G,p(a,r0,y),p(a,r1,y+dy),p(b,r1,y+dy),p(b,r0,y),col,true); }
 }
 function accDrum(G,c,y0,y1,r,col,seg,top){
-  seg=seg||16;
+  seg=seg||16; if(ACC_LOD)seg=Math.min(seg,8);
   for(var i=0;i<seg;i++){ var a=i/seg*6.2832,b=(i+1)/seg*6.2832;
     var p=function(t,yy){return [c[0]+Math.sin(t)*r[0],yy,c[2]+Math.cos(t)*r[1]];};
     accQuad(G,p(a,y0),p(b,y0),p(b,y1),p(a,y1),col);
@@ -12125,23 +12258,29 @@ function accEmit(op,ch,posed,G,joint,x,z,gy,hx,hz,LOOK,tile){
     var NN=[wx,ny,wz,wx,ny,wz,wx,ny,wz];
     if(f.vn&&!f.sk){ for(var q=0;q<3;q++){ var v=f.vn[q], ax=Mj[0]*v[0]+Mj[4]*v[1]+Mj[8]*v[2], ay=Mj[1]*v[0]+Mj[5]*v[1]+Mj[9]*v[2], az=Mj[2]*v[0]+Mj[6]*v[1]+Mj[10]*v[2];
       NN[q*3]=rx*ax+hx*az; NN[q*3+1]=ay; NN[q*3+2]=rz*ax+hz*az; } }
+    var ftile=(f.c===ACC_STEEL||f.c[0]===118?TILE.STONE:(f.c===ACC_STRAW?TILE.THATCH:tile));
+    if(RAW.on){ rawTri(pts[0][0],pts[0][1],pts[0][2],pts[1][0],pts[1][1],pts[1][2],pts[2][0],pts[2][1],pts[2][2],NN,f.c,null,ftile); continue; }
     op.push({p:pts, n:NN, c:f.c, vc:null,
              m:1, tile:(f.c===ACC_STEEL||f.c[0]===118?TILE.STONE:(f.c===ACC_STRAW?TILE.THATCH:tile)), ao:1, glb:1});
   }
 }
-function glbAccessories(op,ch,posed,x,z,gy,hx,hz,uid,build,L,hasHelm){
+function glbAccessories(op,ch,posed,x,z,gy,hx,hz,uid,build,L,hasHelm,far){
   var M=accMeasure(ch); if(!M||!L)return;
   if(hasHelm)L=Object.assign({},L,{hat:null});
   var LOOK=glbLook(uid), hairCol=L.hairCol||LOOK.hair;
   if(!ch._accCache)ch._accCache={};
   var ks=function(v){return v?String(v):"-";};
+  var LODK=far?"|far":"";
   var hk="h|"+L.hair+"|"+L.beard+"|"+L.hat+"|"+hairCol+"|"+ks(L.hatCol)+"|"+ks(L.woolCol)+"|"+ks(L.veilCol);
+  hk+=LODK; ACC_LOD=!!far;
   var hg=ch._accCache[hk]||(ch._accCache[hk]=accHeadGeo(M,L,hairCol));
   var bq=Math.round((build||0)*10)/10;
   if(!L.skin)L=Object.assign({},L,{skin:LOOK.skin});      /* the neck is this person's own skin */
   var bk="b|"+[L.belt,L.apron,L.cloak,L.tabard,L.gown,L.cote,L.sleeves,L.sack,L.collar].map(function(v){return v?1:0;}).join("")+
          "|"+bq+"|"+ks(L.skin)+"|"+ks(L.woolCol)+"|"+ks(L.up)+"|"+ks(L.lo)+"|"+ks(L.vest)+"|"+ks(L.hem)+"|"+ks(L.mantle)+"|"+ks(L.beltCol)+"|"+(L.sleeves||0);
+  bk+=LODK;
   var bg=ch._accCache[bk]||(ch._accCache[bk]=accBodyGeo(M,L,bq));
+  ACC_LOD=false;
   accEmit(op,ch,posed,hg,M.B.head,x,z,gy,hx,hz,LOOK,TILE.CLOTH);
   accEmit(op,ch,posed,bg.pelvis,M.B.pelvis,x,z,gy,hx,hz,LOOK,TILE.CLOTH);
   accEmit(op,ch,posed,bg.chest,M.B.spine1>=0?M.B.spine1:M.B.chest,x,z,gy,hx,hz,LOOK,TILE.CLOTH);
@@ -12189,7 +12328,7 @@ function glbDrawFigure(op,which,x,z,gy,hx,hz,walkT,gaitAmp,weapon,uid,kid,helm,s
   if(dsub&&!kid){ build=dsub.player?(PL?LOOK_BUILD[PL.build%LOOK_BUILD.length].v:0):glbBuild(uid,isGuard);
     try{ dress=PL?lookDress(PL):accLook(uid,!!useCh._female,isGuard,dsub.garb); }catch(e){ dress=null; } }
   glbPlace(op,useCh,posed,x,z,gy,hx,hz,uid,build,dress);
-  if(dress){ try{ glbAccessories(op,useCh,posed,x,z,gy,hx,hz,uid,build,dress,!!helm); }
+  if(dress){ try{ glbAccessories(op,useCh,posed,x,z,gy,hx,hz,uid,build,dress,!!helm,useKey.indexOf("#lod")>=0); }
                   catch(e){ if(!GLB_ACC_ERR){GLB_ACC_ERR=1;trace("ACC: "+(e&&e.message));} } }
   /* a child carries nothing, and the grip offsets are adult-sized anyway.
      Props hang off the full skeleton's matrices, which the cheap copy
@@ -13364,6 +13503,31 @@ function boxR2(out,cx,cz,fwdx,fwdz,latx,latz,ow,ol,y0,y1,col){
   out.push({p:[[Bc[0],y0,Bc[1]],[C[0],y0,C[1]],[C[0],y1,C[1]],[Bc[0],y1,Bc[1]]],c:sh(col,0.80)});
   out.push({p:[[D[0],y0,D[1]],[A[0],y0,A[1]],[A[0],y1,A[1]],[D[0],y1,D[1]]],c:sh(col,0.80)});
 }
+/* ── what the camera can actually see ───────────────────────────────────
+   Every townsman in both towns was built, skinned and uploaded every frame
+   -- Veldkirk's whole population included, a hundred and forty paces away
+   behind a hill -- and then the GPU threw most of it away for being off
+   the screen. Each person is tested once a frame against the camera: on
+   the screen, or close enough to its edge to walk onto it this frame, and
+   they are drawn; otherwise they are not built at all. The loaded-model
+   budget goes only to people in view, so it is never spent behind you. */
+function onView(x,y,z){
+  if(!GLOK||!glVP)return true;
+  var M=glVP, cw=M[3]*x+M[7]*y+M[11]*z+M[15];
+  if(cw<=0.05)return false;
+  var cx=(M[0]*x+M[4]*y+M[8]*z+M[12])/cw, cy=(M[1]*x+M[5]*y+M[9]*z+M[13])/cw;
+  return cx>-1.25&&cx<1.25&&cy>-1.40&&cy<1.50;
+}
+var VIS_N=0, VIS_ALL=0;
+function markVisible(){
+  VIS_N=0; VIS_ALL=0;
+  if(inRoom())return;
+  var lists=[G.npcs,G.vendors,G.workerNpcs,G.carterNpcs,G.guards,G.road,G.robbers,G.thugNpcs];
+  for(var li=0;li<lists.length;li++){ var L=lists[li]; if(!L)continue;
+    for(var i=0;i<L.length;i++){ var m=L[i]; if(!m)continue; VIS_ALL++;
+      var gy=groundH(m.x,m.z);
+      m.__vis=onView(m.x,gy+0.9,m.z); if(m.__vis)VIS_N++; } }
+}
 function glbPickEligible(){
   var cand=[];
   if(G.npcs)for(var i=0;i<G.npcs.length;i++){
@@ -13376,10 +13540,12 @@ function glbPickEligible(){
        the same treatment so those walkers fall back to the procedural
        figure, which does know how to sit. */
     if(ailmentOf(m)||(m.pose||0)>=10||(m.pose||0)===1||(m.pose||0)===2)continue;
+    if(m.__vis===false)continue;
     var d=Math.hypot(m.x-G.px,m.z-G.pz); if(d<24)cand.push([d,m]);
   }
   if(G.guards)for(var i=0;i<G.guards.length;i++){
-    var g=G.guards[i], d=Math.hypot(g.x-G.px,g.z-G.pz); if(d<24)cand.push([d,g]);
+    var g=G.guards[i]; if(g.__vis===false)continue;
+    var d=Math.hypot(g.x-G.px,g.z-G.pz); if(d<24)cand.push([d,g]);
   }
   cand.sort(function(a,b){return a[0]-b[0];});
   var s=new Set();
@@ -13399,10 +13565,13 @@ function glbPickEligible(){
   return s;
 }
 function glDynamic(){
+  RAW.n=0; RAW.on=!INK;
+  try{ if(G&&!inRoom())markVisible(); }catch(e){}
   lodReset();
   GLB_ROLE_N=0;
   GLB_ELIGIBLE=glbPickEligible();
-  if(G&&G.npcs)lodPrepare(G.npcs.concat(G.workerNpcs||[],G.guards||[],G.carterNpcs||[],G.vendors||[]));
+  /* detail tiers are shared out among the people actually on the screen */
+  if(G&&G.npcs)lodPrepare(G.npcs.concat(G.workerNpcs||[],G.guards||[],G.carterNpcs||[],G.vendors||[]).filter(function(m){return m&&m.__vis!==false;}));
   var op=[],bl=[],i;
   /* ── the courtroom: a fixed cast, no townsfolk, no weather ───────── */
   if(inRoom()&&G.scene!=="court"){
@@ -13537,7 +13706,7 @@ function glDynamic(){
     glPerson(op,G.px,G.pz,[196,66,52],true,true,G.skin,G.walkT,G.gaitAmp,G.hx,G.hz,G.sex||0,false,0,G.pseed||7,0,0,pGarb());
     shadowBlob(bl,G.px,.003,G.pz,.6,0.30);
     var inkR=[]; if(INK&&glDyn.k)inkHull(op,inkR);
-    glBuild(op,glDyn.o);glBuild(bl,glDyn.b);if(glDyn.k)glBuild(inkR,glDyn.k);
+    glBuild(op,glDyn.o,RAW.on?RAW:null);RAW.on=false;RAW.n=0;glBuild(bl,glDyn.b);if(glDyn.k)glBuild(inkR,glDyn.k);
     return;
   }
   if(G&&G.scene==="court"){
@@ -13572,7 +13741,7 @@ function glDynamic(){
     glPerson(op,G.px,G.pz,[196,66,52],true,true,G.skin,G.walkT,G.gaitAmp,G.hx,G.hz,G.sex||0,false,0,G.pseed||7,0,0,pGarb());
     shadowBlob(bl,G.px,.003,G.pz,.6,0.30);
     var inkR=[]; if(INK&&glDyn.k)inkHull(op,inkR);
-    glBuild(op,glDyn.o);glBuild(bl,glDyn.b);if(glDyn.k)glBuild(inkR,glDyn.k);
+    glBuild(op,glDyn.o,RAW.on?RAW:null);RAW.on=false;RAW.n=0;glBuild(bl,glDyn.b);if(glDyn.k)glBuild(inkR,glDyn.k);
     return;
   }
   /* waving cloth on the workshop's banner poles — built per frame so the
@@ -13643,7 +13812,7 @@ function glDynamic(){
       for(var fi=0;fi<faces.length;fi++)op.push(faces[fi]);
     }
   }
-  for(i=0;i<G.npcs.length;i++){var m=G.npcs[i];if(m.inside)continue;
+  for(i=0;i<G.npcs.length;i++){var m=G.npcs[i];if(m.inside||m.__vis===false)continue;
     /* The man in a fight is drawn by the fight, so this loop skips him or
        there are two of him. But the flag outlives the fight on several
        paths — the watch breaking it up, a flee, a line ending — and then
@@ -13694,11 +13863,13 @@ function glDynamic(){
     if(v.state==="home"||v.state==="toHome"){
       if(vst)boxR(op,vst.x,vst.z-0.30,2.16,0.96,footH(vst.x,vst.z)+0.95,footH(vst.x,vst.z)+1.34,sh(vst.col,0.62),0,1);
     }
-    if(v.state==="home")continue;
+    if(v.state==="home"||v.__vis===false)continue;
     glPerson(op,v.x,v.z,v.c,false,false,v.skin,v.walkT,v.gaitAmp,v.hx,v.hz,v.gender,false,
              footH(v.x,v.z),v.uid||1,0,v.pose||0,v.garb);
     shadowBlob(bl,v.x,.003,v.z,.55,0.30);}
-  if(G.carterNpcs)for(i=0;i<G.carterNpcs.length;i++){var w=G.carterNpcs[i];
+  /* A carter at home, at church or in the tavern was still drawn at the
+     door with his cart, all night: nothing skipped him when he went in. */
+  if(G.carterNpcs)for(i=0;i<G.carterNpcs.length;i++){var w=G.carterNpcs[i]; if(w.inside||w.__vis===false)continue;
     /* the handcart they fetch and carry with */
     var hfx=w.hx||0,hfz=w.hz||1,hlx=-hfz,hlz=hfx;
     var hcx=w.x-hfx*1.35, hcz=w.z-hfz*1.35, hcy=groundH(hcx,hcz);
@@ -13719,6 +13890,15 @@ function glDynamic(){
     glPerson(op,w.x,w.z,w.c,false,false,w.skin,w.walkT,w.gaitAmp,w.hx,w.hz,w.gender,false,
              footH(w.x,w.z),w.uid||2,0,0,"apron");
     shadowBlob(bl,w.x,.003,w.z,.55,0.30);}
+  /* The hands were never drawn in the street at all: their run to the
+     bench, home, to church and to the tavern all happened out of sight.
+     They are drawn while they are out and about; at the bench they are
+     indoors and so is their figure. */
+  if(G.workerNpcs)for(i=0;i<G.workerNpcs.length;i++){var wk=G.workerNpcs[i];
+    if(wk.inside||wk.__vis===false||!(wk.toWork||wk.goingHome||wk.crewChurchGo||wk.goingTavern))continue;
+    glPerson(op,wk.x,wk.z,wk.c||[150,126,96],false,false,wk.skin||0,wk.walkT||0,wk.gaitAmp||1,wk.hx||0,wk.hz||1,wk.gender||0,false,
+             footH(wk.x,wk.z),wk.uid||11,0,0,"apron");
+    shadowBlob(bl,wk.x,.003,wk.z,.55,0.30);}
   if(G.glbTest){
     /* a loaded model is arbitrary user data, unlike everything else this
        game draws. If posing or placing it ever throws, the old code had
@@ -13778,7 +13958,7 @@ function glDynamic(){
     var fgy=groundH(FIGHT.fx,FIGHT.fz);
     healthBar(bl,FIGHT.fx,FIGHT.fz,fgy+1.62,FIGHT.hpFoe/FIGHT.foeMax,[172,44,40]);
   }
-  if(G.road)for(i=0;i<G.road.length;i++){var rv=G.road[i];
+  if(G.road)for(i=0;i<G.road.length;i++){var rv=G.road[i]; if(rv.__vis===false)continue;
     var rvy=footH(rv.x,rv.z);
     /* Some of the traffic is a drover with stock behind him. They trail in
        his wake rather than walking in lockstep: each beast sits at its own
@@ -13886,7 +14066,7 @@ function glDynamic(){
     }
     glPerson(op,rv.x,rv.z,rv.c,false,false,rv.skin,rv.walkT,rv.gaitAmp,rv.hx,rv.hz,rv.gender,false,rvy,rv.uid||3,0,0,"gown");
     shadowBlob(bl,rv.x,rvy+.003,rv.z,.5,0.30);}
-  if(G.robbers)for(i=0;i<G.robbers.length;i++){var rb=G.robbers[i];
+  if(G.robbers)for(i=0;i<G.robbers.length;i++){var rb=G.robbers[i]; if(rb.__vis===false)continue;
     var rby=footH(rb.x,rb.z);
     glPerson(op,rb.x,rb.z,rb.c,false,false,rb.skin,rb.walkT,rb.gaitAmp,rb.hx,rb.hz,0,false,rby,rb.uid||4,0,0,"hooded");
     shadowBlob(bl,rb.x,rby+.003,rb.z,.5,0.30);}
@@ -13897,12 +14077,12 @@ function glDynamic(){
     glPerson(op,th.x,th.z,th.c,false,false,th.skin,th.walkT,th.gaitAmp,th.hx,th.hz,0,false,thy,th.uid||8,0,0,"hooded");
     shadowBlob(bl,th.x,thy+.003,th.z,.5,0.30);}
   /* your own men, standing about your door or out on a piece of work */
-  if(G.thugNpcs)for(i=0;i<G.thugNpcs.length;i++){var tg=G.thugNpcs[i];
+  if(G.thugNpcs)for(i=0;i<G.thugNpcs.length;i++){var tg=G.thugNpcs[i]; if(tg.__vis===false)continue;
     if(FIGHT&&!FIGHT.over&&FIGHT.foe===tg)continue;
     var tgy=footH(tg.x,tg.z);
     glPerson(op,tg.x,tg.z,tg.c,false,false,tg.skin,tg.walkT,tg.gaitAmp,tg.hx,tg.hz,0,false,tgy,tg.uid||7,0,0,"hooded");
     shadowBlob(bl,tg.x,tgy+.003,tg.z,.5,0.30);}
-  if(G.guards)for(i=0;i<G.guards.length;i++){var g=G.guards[i];
+  if(G.guards)for(i=0;i<G.guards.length;i++){var g=G.guards[i]; if(g.__vis===false)continue;
     if(FIGHT&&!FIGHT.over&&FIGHT.foe===g)continue;     /* the fight draws him */
     var gy=footH(g.x,g.z);
     if(FIGHT&&!FIGHT.over&&FIGHT.second===g){
@@ -14057,7 +14237,7 @@ function glDynamic(){
   }
   var ink=[]; if(INK&&glDyn.k)inkHull(op,ink);
   LASTFACES=op.length;   /* what the dynamic pass actually built this frame */
-  glBuild(op,glDyn.o);glBuild(bl,glDyn.b);if(glDyn.k)glBuild(ink,glDyn.k);
+  glBuild(op,glDyn.o,RAW.on?RAW:null);RAW.on=false;RAW.n=0;glBuild(bl,glDyn.b);if(glDyn.k)glBuild(ink,glDyn.k);
 }
 function glDrawSky(top,bot){
   gl.useProgram(glSky);
@@ -14650,10 +14830,11 @@ function step(dt){
     } else {
       /* head for the next corner of the route rather than straight at the
          destination, so a walker goes round the block instead of into it */
-      var wp=walkerAdvance(m);
+      var wp=walkerAdvance(m), dwp=unstick(m,wp[0],wp[1],dt); if(dwp)wp=dwp;
       var lx=wp[0]-m.x, lz=wp[1]-m.z, ld=Math.hypot(lx,lz)||1;
-      var mAmt=m.sp*dt*WALK_MULT;
+      var mAmt=m.sp*dt*WALK_MULT, mox=m.x, moz=m.z;
       slideTo(m,m.x+lx/ld*mAmt,m.z+lz/ld*mAmt);
+      unstickAfter(m,mox,moz,mAmt,m.tx,m.tz,npcGiveUp);
       m.hx=lx/ld;m.hz=lz/ld;m.walkT=(m.walkT||0)+mAmt;
       m.gaitAmp=(m.gaitAmp||0)+((hurried(m)?1.35:1)-(m.gaitAmp||0))*Math.min(1,dt*8);
     }
@@ -14950,8 +15131,9 @@ function step(dt){
         if(cd>2.0){ aimX=g.callX; aimZ=g.callZ; }
         else { g.called=0; if(gd>watchRange()||lineBlocked(g.x,g.z,G.px,G.pz))g.cool=20; }
       }
+      var gdw=unstick(g,aimX,aimZ,dt); if(gdw){ aimX=gdw[0]; aimZ=gdw[1]; }
       gx=aimX-g.x; gz=aimZ-g.z; gd=Math.hypot(gx,gz)||1;
-      var ux3=gx/gd, uz3=gz/gd;
+      var ux3=gx/gd, uz3=gz/gd, gox=g.x, goz=g.z;
       /* A watchman walked straight at you and slideTo tried the direct move,
          then x alone, then z alone. Against the corner of a house all three
          fail and he stops there for good — which is the guard standing in a
@@ -14968,6 +15150,7 @@ function step(dt){
         }
         if(got){ux3=(g.hx||ux3);uz3=(g.hz||uz3);}
       }
+      unstickAfter(g,gox,goz,gAmt,aimX,aimZ,function(w){ w.cool=20; w.called=0; });
       g.hx=gx/gd;g.hz=gz/gd;g.walkT=(g.walkT||0)+gAmt;
       g.gaitAmp=(g.gaitAmp||0)+(1-(g.gaitAmp||0))*Math.min(1,dt*8);
     } else {
@@ -14996,7 +15179,8 @@ function step(dt){
         if(gsp){ g.tx=gsp[0]; g.tz=gsp[1]; }
         else { var GT=TOWNS[g.town||0]; g.tx=GT.x; g.tz=GT.z; }
       }
-      var ex=g.tx-g.x,ez=g.tz-g.z,ed=Math.hypot(ex,ez);
+      var gpw=unstick(g,g.tx,g.tz,dt), gtx=gpw?gpw[0]:g.tx, gtz=gpw?gpw[1]:g.tz;
+      var ex=gtx-g.x,ez=gtz-g.z,ed=Math.hypot(ex,ez);
       if(ed>0.1){
         var gAmt=g.sp*dt*WALK_MULT;
         /* A man does not walk through the back of the man in front. If
@@ -15014,7 +15198,9 @@ function step(dt){
             break;
           }
         }
+        var pgx=g.x, pgz=g.z;
         slideTo(g,g.x+ex/ed*gAmt,g.z+ez/ed*gAmt);
+        unstickAfter(g,pgx,pgz,gAmt,g.tx,g.tz,function(w){ w.tx=undefined; w.tz=undefined; });
         g.hx=ex/ed;g.hz=ez/ed;g.walkT=(g.walkT||0)+gAmt;
         g.gaitAmp=(g.gaitAmp||0)+(1-(g.gaitAmp||0))*Math.min(1,dt*8);
       }
