@@ -258,7 +258,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.035</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.037</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -320,6 +320,8 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
         <button data-sp="1" class="on">1&times;</button>
         <button data-sp="2">2&times;</button>
         <button data-sp="4">4&times;</button>
+        <button data-sp="8">8&times;</button>
+        <button data-sp="16">16&times;</button>
       </div>
       <div class="clock" id="clock">—</div>
       <div class="bbar" id="bbar"></div>
@@ -446,7 +448,14 @@ var DAYH=24;              /* in-game hours per day */
 /* was 13.5 -- a full day passed in five and a half real minutes even at
    1x, which read as everything happening at once. Slower across every
    speed, not just retuned at one of them. */
-var HOURSEC=24;           /* real seconds per in-game hour at 1x */
+/* The clock ran a game day in under ten minutes at 1x, too fast to watch
+   the town go about its day, while everybody in it shuffled along at well
+   under a real walking pace. The hour is longer now (a day is sixteen
+   minutes at 1x, two at 8x, one at 16x) and people walk and run 1.6 times
+   faster -- so they get where they are going inside the hour instead of
+   spending half of it in the street. */
+var HOURSEC=40;           /* real seconds per in-game hour at 1x */
+var WALK_MULT=1.6;        /* every townsman's pace, on top of his own */
 var DAYS_PER_SEASON=6, DAYS_PER_YEAR=24;
 
 var GOODS={
@@ -964,7 +973,7 @@ function stepThieves(dt){
     if(t.tx==null)continue;
     var dx=t.tx-t.x, dz=t.tz-t.z, dd=Math.hypot(dx,dz);
     if(dd>0.6){
-      var amt=t.sp*dt;
+      var amt=t.sp*dt*WALK_MULT;
       slideTo(t,t.x+dx/dd*amt,t.z+dz/dd*amt);
       t.hx=dx/dd;t.hz=dz/dd;t.walkT=(t.walkT||0)+amt;
       t.gaitAmp=(t.gaitAmp||0)+(1-(t.gaitAmp||0))*Math.min(1,dt*8);
@@ -1097,7 +1106,7 @@ function stepThugs(dt){
     if(t.tx==null)continue;
     var dx=t.tx-t.x, dz=t.tz-t.z, dd=Math.hypot(dx,dz);
     if(dd>0.6){
-      var amt=t.sp*dt;
+      var amt=t.sp*dt*WALK_MULT;
       slideTo(t,t.x+dx/dd*amt,t.z+dz/dd*amt);
       t.hx=dx/dd;t.hz=dz/dd;t.walkT=(t.walkT||0)+amt;
       t.gaitAmp=(t.gaitAmp||0)+(1-(t.gaitAmp||0))*Math.min(1,dt*8);
@@ -3247,13 +3256,13 @@ function stepRoad(dt){
   stepThieves(dt);
   for(var i=G.road.length-1;i>=0;i--){
     var r=G.road[i];
-    r.along+=r.dir*r.sp*dt;
+    r.along+=r.dir*r.sp*dt*WALK_MULT;
     if(r.along<=0||r.along>=ROADLEN){G.road.splice(i,1);continue;}
     var pt=roadAt(r.along);
     var nx=-pt.hz,nz=pt.hx;
     r.x=pt.x+nx*r.lane; r.z=pt.z+nz*r.lane;
     r.hx=pt.hx*r.dir; r.hz=pt.hz*r.dir;
-    r.walkT=(r.walkT||0)+r.sp*dt;
+    r.walkT=(r.walkT||0)+r.sp*dt*WALK_MULT;
     r.gaitAmp=(r.gaitAmp||0)+(1-(r.gaitAmp||0))*Math.min(1,dt*8);
   }
   stepRobbers(dt);
@@ -3360,7 +3369,7 @@ function stepRobbers(dt){
     /* lose interest once you're back among houses */
     if(roadNearest(G.px,G.pz).dist>ROADW+6||dd>46){G.robbers.splice(i,1);continue;}
     if(dd>1.5){
-      var amt=b.sp*dt;
+      var amt=b.sp*dt*WALK_MULT;
       slideTo(b,b.x+dx/dd*amt,b.z+dz/dd*amt);
       b.hx=dx/dd;b.hz=dz/dd;b.walkT=(b.walkT||0)+amt;
       b.gaitAmp=(b.gaitAmp||0)+(1-(b.gaitAmp||0))*Math.min(1,dt*8);
@@ -4418,7 +4427,7 @@ function prop(x,z,w,d,tag){PROPS.push({x:x,z:z,w:w,d:d,tag:tag}); PROPGRID=null;
    reads props through a coarse grid so a town full of trees costs it no
    more than the dozen props it used to walk. */
 var PROPGRID=null, PROPCELL=4, PROPMARGIN=1.6, BLOCK_SOFT=false;
-function propSoft(q){ return q.tag==="tree"||q.tag==="lamp"||q.tag==="cart"; }
+function propSoft(q){ return q.tag==="tree"||q.tag==="lamp"||q.tag==="cart"||q.tag==="steps"; }
 /* the first prop standing across a straight walk, if any */
 function propOnLine(x0,z0,x1,z1){
   var L=Math.hypot(x1-x0,z1-z0), n=Math.max(1,Math.ceil(L/0.3)), g=propGrid();
@@ -4742,7 +4751,7 @@ function stepVendors(dt){
       if(bq){ var dc=propCorner(bq,v.x,v.z,wp[0],wp[1]); if(dc){ v.detour=dc; v.detourT=10; wp=dc; } }
     }
     var lx=wp[0]-v.x, lz=wp[1]-v.z, ld=Math.hypot(lx,lz)||1;
-    var amt=v.sp*(v.hurry?1.9:1)*dt;
+    var amt=v.sp*(v.hurry?1.9:1)*dt*WALK_MULT;
     /* This used to walk the last 2.4 units with collision switched off, so
        a stallholder crossed his own counter and, on the way home, the front
        wall of his house. The exemption above is the one thing he may walk
@@ -8371,7 +8380,11 @@ function buildGeo(){
      the market stood in a hole. Each one stands on the ground it is
      actually on, the way the trees and the milestones do. */
   conduitG(mcx,mcz);
-  prop(mcx,mcz,3.0,3.0);   /* the basin; the low steps can be stood on, and footH puts the feet on them */
+  prop(mcx,mcz,3.0,3.0);   /* the basin */
+  /* and its two steps, out to where the stone ends: townsfolk walk round
+     them, not across with their feet in the stone. The six stallholders
+     keep the old line through the square (see BLOCK_SOFT). */
+  prop(mcx,mcz,4.5,4.5,"steps");
   G.conduits=(G.conduits||[]); G.conduits.push([mcx,mcz]);
   for(var cq=0;cq<4;cq++){
     var ca=(cq+0.5)/4*6.2832;
@@ -14548,7 +14561,7 @@ function step(dt){
        walker was, not against how far the target still is. */
     var movedNow=(m.lx!==undefined)?Math.hypot(m.x-m.lx,m.z-m.lz):1;
     m.lx=m.x;m.lz=m.z;
-    if(movedNow<m.sp*dt*0.35)m.stuckT=(m.stuckT||0)+dt;
+    if(movedNow<m.sp*dt*WALK_MULT*0.35)m.stuckT=(m.stuckT||0)+dt;
     else m.stuckT=0;
     /* and over a whole second, which catches the man who moves every frame
        and gets nowhere — slid one way, shoved back the other */
@@ -14617,7 +14630,7 @@ function step(dt){
          destination, so a walker goes round the block instead of into it */
       var wp=walkerAdvance(m);
       var lx=wp[0]-m.x, lz=wp[1]-m.z, ld=Math.hypot(lx,lz)||1;
-      var mAmt=m.sp*dt;
+      var mAmt=m.sp*dt*WALK_MULT;
       slideTo(m,m.x+lx/ld*mAmt,m.z+lz/ld*mAmt);
       m.hx=lx/ld;m.hz=lz/ld;m.walkT=(m.walkT||0)+mAmt;
       m.gaitAmp=(m.gaitAmp||0)+((hurried(m)?1.35:1)-(m.gaitAmp||0))*Math.min(1,dt*8);
@@ -14903,7 +14916,7 @@ function step(dt){
               Math.hypot(g.callX-g.x,g.callZ-g.z)<60))){
       /* they used to only start moving at twenty units, so the first you
          knew of the watch was a man already on top of you */
-      var gAmt=g.sp*dt;
+      var gAmt=g.sp*dt*WALK_MULT;
       /* callX/callZ were written by every caller and read by nobody: a man
          fetched to a killing in the west quarter walked at wherever you
          happened to be standing now instead. He goes to the place he was
@@ -14963,7 +14976,7 @@ function step(dt){
       }
       var ex=g.tx-g.x,ez=g.tz-g.z,ed=Math.hypot(ex,ez);
       if(ed>0.1){
-        var gAmt=g.sp*dt;
+        var gAmt=g.sp*dt*WALK_MULT;
         /* A man does not walk through the back of the man in front. If
            another of the watch is close and ahead of him, he shortens his
            stride rather than shoving — which is also why they end up
@@ -15139,7 +15152,7 @@ var PEW_SEATS=12;              /* the twelve occupant slots the pews draw */
    three hours before, and each man is given his own time to set off by
    how far he has to walk, so the far side of the town leaves first and
    the pews are full when the office begins. */
-var CHURCH_WALK_MPH=21;         /* metres a church-goer walks in a game hour */
+var CHURCH_WALK_MPH=21*WALK_MULT*(HOURSEC/24);         /* metres a church-goer walks in a game hour */
 function serviceCalling(){ var h=G.t%DAYH; return h>=SERVICE_HOUR-3&&h<SERVICE_HOUR-2; }
 function serviceOn(){ var h=G.t%DAYH; return h>=SERVICE_HOUR&&h<SERVICE_HOUR+2; }
 /* ── paying the priest ────────────────────────────────────────────────
@@ -15431,7 +15444,7 @@ function stepCrewHome(dt){
     if(m.detour){ m.detourT-=dt; if(m.detourT<=0||Math.hypot(m.detour[0]-m.x,m.detour[1]-m.z)<0.6)m.detour=null; else wp=m.detour; }
     else { var bq=lineBlocker(m.x,m.z,wp[0],wp[1]); if(bq){ var dc=propCorner(bq,m.x,m.z,wp[0],wp[1]); if(dc){m.detour=dc;m.detourT=10;wp=dc;} } }
     var dx=wp[0]-m.x, dz=wp[1]-m.z, dl=Math.hypot(dx,dz)||1;
-    var mv=Math.min(2.0*dt,dl);          /* they run for it */
+    var mv=Math.min(2.0*WALK_MULT*dt,dl);          /* they run for it */
     var p={x:m.x,z:m.z};
     if(slideTo(p,m.x+dx/dl*mv,m.z+dz/dl*mv))m.crewStuck=0;
     else { m.crewStuck=(m.crewStuck||0)+dt; if(m.crewStuck>2.5){ m.leg=null; m.path=null; m.detour=null; m.crewStuck=0; } }
@@ -15621,7 +15634,17 @@ function produceOne(hrs,tradeKey){
          nothing was what started the spiral where you miss one payday, lose
          a carter, and never make another */
       var reserve=G.shop.workers*handWage()+(G.shop.carters||0)*carterWage();
-      var canBuy=(room>0&&G.coin-unitC>=reserve);
+      /* ...but the reserve starved an empty bench. A new house that took on
+         a hand and a carter was left with 120 coin against 216 in wages, so
+         the cart never bought a single sack, nothing was ever made to sell,
+         the first payday failed and the whole crew walked by the second
+         morning: the obvious opening lost the game. With nothing in store
+         and nothing finished, holding the wages back only guarantees they
+         are never earned -- so the cart always buys the bench a working
+         stock, down to the last coin, and keeps the wage packet back only
+         beyond that. */
+      var starved=(G.shop.store_in<RECIPE*2&&G.shop.store_out===0);
+      var canBuy=(room>0&&(G.coin-unitC>=reserve||(starved&&G.coin-unitC>=0)));
       var moved=false;
       /* keep the bench fed first, run the finished goods down with what is
          left over — which is what a carter with a day's work would do */
@@ -19446,7 +19469,14 @@ function loop(ts){
      nothing to look at. It now crawls forward at a small fraction instead
      of stopping dead, so the world is still visibly alive while you
      decide what to do next. */
-  if(G&&!G.over)step(dt*(speed>0?speed:0.05));
+  /* at 8x and 16x a single step would carry a walker the best part of a
+     metre per frame, straight through a lamp post; the world is stepped in
+     slices of at most an eighth of a second instead, and if the device
+     cannot keep up it simply runs a little slower rather than grinding */
+  if(G&&!G.over){
+    var sdt=dt*(speed>0?speed:0.05), nsl=Math.min(6,Math.max(1,Math.ceil(sdt/0.125)));
+    for(var sl=0;sl<nsl&&G&&!G.over;sl++)step(Math.min(sdt/nsl,0.125));
+  }
   draw();
   fTimes[fIdx++%30]=performance.now()-ts;
   if(fIdx===60&&!LOWQ){
