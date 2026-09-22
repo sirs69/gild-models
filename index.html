@@ -258,7 +258,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.037</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.038</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -4492,10 +4492,30 @@ var BLOCK_IGNORE=null;
    and everyone else keep the ordinary pad. A watchman already standing
    too close is walked out by slideTo's own way out of a footprint. */
 var BLOCK_PAD=0, GUARD_PAD=0.74;
+/* Measured: blockedAt was 54 per cent of everything the simulation does,
+   because every call walked every house in both towns -- sixty boxes for
+   each step of each walker, each bisection, each shove. Houses are read
+   through a coarse grid now, rebuilt whenever the town is rebuilt; only a
+   probe wider than the grid's margin still walks the whole list. */
+var BGRID=null, BGCELL=6, BGMARGIN=1.6;
+function bGrid(){
+  if(BGRID&&BGRID.src===B&&BGRID.n===B.length)return BGRID;
+  var g={src:B,n:B.length,m:new Map()};
+  for(var i=0;i<B.length;i++){ var b=B[i];
+    if(b.kind==="market"||!b.w||!b.d)continue;
+    var x0=Math.floor((b.x-b.w/2-BGMARGIN)/BGCELL), x1=Math.floor((b.x+b.w/2+BGMARGIN)/BGCELL);
+    var z0=Math.floor((b.z-b.d/2-BGMARGIN)/BGCELL), z1=Math.floor((b.z+b.d/2+BGMARGIN)/BGCELL);
+    for(var cx=x0;cx<=x1;cx++)for(var cz=z0;cz<=z1;cz++){ var k=cx*100003+cz, l=g.m.get(k); if(!l){l=[];g.m.set(k,l);} l.push(b); } }
+  BGRID=g; return g;
+}
 function blockedAt(x,z,pad){
   pad=(pad===undefined)?(BLOCK_PAD||0.48):pad;
   var i;
-  for(i=0;i<B.length;i++){
+  if(pad<=BGMARGIN){
+    var bl=bGrid().m.get(Math.floor(x/BGCELL)*100003+Math.floor(z/BGCELL));
+    if(bl)for(i=0;i<bl.length;i++){ var bb=bl[i];
+      if(Math.abs(x-bb.x)<bb.w/2+pad&&Math.abs(z-bb.z)<bb.d/2+pad)return true; }
+  } else for(i=0;i<B.length;i++){
     var b=B[i];
     if(b.kind==="market"||!b.w||!b.d)continue;
     if(Math.abs(x-b.x)<b.w/2+pad&&Math.abs(z-b.z)<b.d/2+pad)return true;
@@ -4692,10 +4712,10 @@ function stepVendors(dt){
     /* everything this man does this tick is done with his own stall open to
        him and every other wall in the town solid */
     BLOCK_IGNORE="stall"+v.vendor;
-    /* the six stallholders walk one fixed errand a day between the same two
-       doors; a tree the town builder set on it would trap one for good, so
-       they step round the stonework and not the furniture */
-    BLOCK_SOFT=true;
+    /* The six stallholders used to be let walk through trees, carts and the
+       fountain's steps so a badly placed one could not trap them -- which is
+       exactly the crowd you saw cutting across the fountain at dawn. They
+       step round things now, detouring round a house or a prop alike. */
     var home=null; for(var j=0;j<B.length;j++)if(B[j].id===v.home){home=B[j];break;}
     if(!home)continue;
     var seat=vendorSeat(st);
@@ -4747,8 +4767,8 @@ function stepVendors(dt){
       v.detourT-=dt;
       if(v.detourT<=0||Math.hypot(v.detour[0]-v.x,v.detour[1]-v.z)<0.6)v.detour=null; else wp=v.detour;
     } else {
-      var bq=propOnLine(v.x,v.z,wp[0],wp[1]);
-      if(bq){ var dc=propCorner(bq,v.x,v.z,wp[0],wp[1]); if(dc){ v.detour=dc; v.detourT=10; wp=dc; } }
+      var bq=lineBlocker(v.x,v.z,wp[0],wp[1]);
+      if(bq&&bq.tag!==BLOCK_IGNORE){ var dc=propCorner(bq,v.x,v.z,wp[0],wp[1]); if(dc){ v.detour=dc; v.detourT=10; wp=dc; } }
     }
     var lx=wp[0]-v.x, lz=wp[1]-v.z, ld=Math.hypot(lx,lz)||1;
     var amt=v.sp*(v.hurry?1.9:1)*dt*WALK_MULT;
@@ -8003,6 +8023,7 @@ function auditLive(dt){
   }
 }
 function buildGeo(){
+  BGRID=null;   /* a house may have grown, gone or been built: re-bucket them */
   GLDIRTY=true;
   paveReset();
   GEO=[];
@@ -8403,7 +8424,8 @@ function buildGeo(){
   CURY=0;
   lampG(-6.2,5.6);
   lampG(6.2,-5.6);
-  cartG(6.7,-1.2);
+  cartG(9.4,-1.2);   /* was hard against the fountain's steps: the two made one wall
+                        with a pocket people packed into */
   for(i=0;i<B.length;i++)if(B[i].id==="shop")cartG(B[i].x-B[i].w*0.55-1.4,B[i].z+B[i].d*0.3);
 
   /* buildings */
@@ -19475,7 +19497,13 @@ function loop(ts){
      cannot keep up it simply runs a little slower rather than grinding */
   if(G&&!G.over){
     var sdt=dt*(speed>0?speed:0.05), nsl=Math.min(6,Math.max(1,Math.ceil(sdt/0.125)));
-    for(var sl=0;sl<nsl&&G&&!G.over;sl++)step(Math.min(sdt/nsl,0.125));
+    var slT0=performance.now();
+    for(var sl=0;sl<nsl&&G&&!G.over;sl++){
+      step(Math.min(sdt/nsl,0.125));
+      /* over budget: the rest of this frame's time is dropped, and 16x
+         runs as fast as the device can manage rather than choking it */
+      if(sl<nsl-1&&performance.now()-slT0>11)break;
+    }
   }
   draw();
   fTimes[fIdx++%30]=performance.now()-ts;
