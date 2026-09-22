@@ -258,7 +258,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.042</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.043</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -4532,10 +4532,17 @@ function unstickAfter(m,ox,oz,want,tx,tz,giveUp){
      again. He looks for his way round at his own clearance. */
   var PADW=(m.patrol!==undefined)?GUARD_PAD:0.48;
   var now=G?(G.day*DAYH+G.t)*HOURSEC:0;           /* simulated seconds, whatever the speed */
-  if(m.__cpT===undefined||m.__cpT>now){ m.__cpT=now; m.__cpX=m.x; m.__cpZ=m.z; m.__tries=0; return; }
-  if(Math.hypot(m.x-m.__cpX,m.z-m.__cpZ)>0.9){ m.__cpT=now; m.__cpX=m.x; m.__cpZ=m.z; if(!m.dpath)m.__tries=0; return; }
-  if(now-m.__cpT<2.5)return;
-  m.__cpT=now; m.__cpX=m.x; m.__cpZ=m.z;
+  /* Progress means getting closer to where he is going -- not moving.
+     Two of the watch at the fountain slid up its side and back down again
+     all day: every stretch of sliding counted as progress, so they were
+     never judged stuck and never went round. Measured against the point he
+     is actually steering for (the corner or path point, if he has one). */
+  var eff=(m.dpath&&m.dpath.length)?m.dpath[0]:(m.dtour||[tx,tz]);
+  var dNow=Math.hypot(eff[0]-m.x,eff[1]-m.z), tkey=eff[0].toFixed(1)+","+eff[1].toFixed(1);
+  if(m.__cpT===undefined||m.__cpT>now||m.__cpK!==tkey){ m.__cpT=now; m.__cpD=dNow; m.__cpK=tkey; if(m.__cpK===undefined)m.__tries=0; return; }
+  if(dNow<m.__cpD-0.9){ m.__cpT=now; m.__cpD=dNow; if(!m.dpath&&!m.dtour)m.__tries=0; return; }
+  if(now-m.__cpT<1.8)return;
+  m.__cpT=now; m.__cpD=dNow;
   if(Math.hypot(tx-m.x,tz-m.z)<1.2)return;          /* there, near enough */
   /* a goal inside his own clearance of a wall is as close as he can get */
   if(Math.hypot(tx-m.x,tz-m.z)<2.6&&blockedAt(tx,tz,PADW)){ m.dpath=null; m.dtour=null; if(giveUp)giveUp(m); m.__tries=0; return; }
@@ -8527,7 +8534,9 @@ function buildGeo(){
      the market stood in a hole. Each one stands on the ground it is
      actually on, the way the trees and the milestones do. */
   conduitG(mcx,mcz);
-  prop(mcx,mcz,3.0,3.0);   /* the basin */
+  /* (the basin needs no box of its own: the steps' box holds it, and two
+     nested boxes gave a watchman round-the-corner points that were inside
+     the outer one) */
   /* and its two steps, out to where the stone ends: townsfolk walk round
      them, not across with their feet in the stone. The six stallholders
      keep the old line through the square (see BLOCK_SOFT). */
