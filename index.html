@@ -258,7 +258,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.043</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.046</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -2701,7 +2701,21 @@ function buildPads(){
     }
   }
 }
+/* Rebuilding the town took over two seconds, 80 per cent of it asking the
+   ground how high it is: 51,000 questions about only 8,840 different
+   points, every one walking every road and every building pad -- and the
+   answers are the same every time until a building moves. While the town
+   is being built, answers are remembered; they are forgotten the moment
+   the pads are laid again. */
+var GH_CACHE=null, GH_PADS=null, GH_ON=false;
 function groundH(x,z){
+  if(!GH_ON)return groundH0(x,z);
+  if(GH_PADS!==PADS||!GH_CACHE){ GH_CACHE=new Map(); GH_PADS=PADS; }
+  var k=Math.round(x*32)*1048576+Math.round(z*32), v=GH_CACHE.get(k);
+  if(v===undefined){ v=groundH0(x,z); GH_CACHE.set(k,v); }
+  return v;
+}
+function groundH0(x,z){
   var h=preH(x,z);
   /* take the strongest pad rather than blending each in turn: sequential
      blending let neighbouring pads drag each other off their own level, so
@@ -4537,7 +4551,12 @@ function unstickAfter(m,ox,oz,want,tx,tz,giveUp){
      all day: every stretch of sliding counted as progress, so they were
      never judged stuck and never went round. Measured against the point he
      is actually steering for (the corner or path point, if he has one). */
-  var eff=(m.dpath&&m.dpath.length)?m.dpath[0]:(m.dtour||[tx,tz]);
+  /* on a planned route, progress is toward the route's next corner -- a
+     route that sets off away from the goal to go round something is not
+     a man who is stuck, and must not be "unstuck" off his route */
+  var onRoute=m.nav&&!m.nav.none&&m.nav.pts&&m.nav.i<m.nav.pts.length;
+  if(onRoute){ m.dtour=null; m.dpath=null; }
+  var eff=onRoute?m.nav.pts[m.nav.i]:((m.dpath&&m.dpath.length)?m.dpath[0]:(m.dtour||[tx,tz]));
   var dNow=Math.hypot(eff[0]-m.x,eff[1]-m.z), tkey=eff[0].toFixed(1)+","+eff[1].toFixed(1);
   if(m.__cpT===undefined||m.__cpT>now||m.__cpK!==tkey){ m.__cpT=now; m.__cpD=dNow; m.__cpK=tkey; if(m.__cpK===undefined)m.__tries=0; return; }
   if(dNow<m.__cpD-0.9){ m.__cpT=now; m.__cpD=dNow; if(!m.dpath&&!m.dtour)m.__tries=0; return; }
@@ -4565,6 +4584,7 @@ function unstickAfter(m,ox,oz,want,tx,tz,giveUp){
       var d=Math.hypot(f[0]-m.x,f[1]-m.z)+Math.hypot(tx-f[0],tz-f[1]); if(d<bd){bd=d;best=f;} }
     dc=best;
   }
+  if(onRoute){ m.nav=null; return; }            /* a routed walker who is stuck plans again */
   if(dc){ m.dtour=dc; m.dtourT=9; m.leg=null; return; }
   m.leg=null; m.path=null;
   if(m.__tries>=3&&giveUp){ giveUp(m); m.__tries=0; m.dtour=null; }
@@ -5304,7 +5324,166 @@ function idleDone(){
     }
   }
 }
+/* ══ ONE WAY TO WALK ════════════════════════════════════════════════════
+   Townsfolk, the watch, the stallholders and the crew each had their own
+   way of getting about -- straight lines, road legs, slides along walls,
+   and a pile of patches for getting unstuck -- and every new thing put in
+   the square found a new way to trap one of them. They all walk the same
+   way now. When the town is built, each town is laid out as a grid of
+   half-metre cells and every cell is marked walkable or not from the same
+   blockedAt everything else uses, once for an ordinary body and once for
+   a watchman with his shield. A walker asks for a route to where he is
+   going, the route is planned on that grid round every house, stall,
+   tree, cart and fountain there is, straightened to the fewest turns he
+   can see between, and he walks it corner to corner. The old movers are
+   still underneath for anything the grid does not cover (the road between
+   the towns, a room); inside a town nobody walks without a route. */
+/* routes are laid a little wider than the walker (NAV_MARGIN) so that the
+   straight run between two corners never grazes what it is going round */
+var NAV_MARGIN=0.28;
+var NAV=null, NAV_CELL=0.5, NAV_PLAN_BUDGET=2, NAV_PLANS_LEFT=2, NAV_CACHE=new Map(), NAV_CACHE_MAX=600, NAV_STATS={plans:0,hits:0,fails:0};
+function navPadOf(m){ return (m&&m.patrol!==undefined)?GUARD_PAD:0.48; }
+function navBuild(){
+  var grids=[];
+  for(var ti=0;ti<TOWNS.length;ti++){ var T=TOWNS[ti], R=T.r+14;
+    var x0=T.x-R, z0=T.z-R, W=Math.ceil(2*R/NAV_CELL)+1, H=W, N=W*H;
+    var layers={};
+    [0.48,GUARD_PAD].forEach(function(pad){
+      var bl=new Uint8Array(N), was=BLOCK_IGNORE, wasS=BLOCK_SOFT; BLOCK_IGNORE=null; BLOCK_SOFT=false;
+      for(var k=0;k<N;k++){ var cx=x0+(k%W)*NAV_CELL, cz=z0+Math.floor(k/W)*NAV_CELL; if(blockedAt(cx,cz,pad+NAV_MARGIN))bl[k]=1; }
+      BLOCK_IGNORE=was; BLOCK_SOFT=wasS;
+      layers[pad]=bl; });
+    grids.push({town:ti,x0:x0,z0:z0,W:W,H:H,N:N,layers:layers,
+      g:new Float32Array(N), from:new Int32Array(N), stamp:new Uint32Array(N), closed:new Uint32Array(N), sid:0,
+      heap:new Int32Array(N), hk:new Float32Array(N)});
+  }
+  NAV={grids:grids, src:B, n:B.length, pn:PROPS.length};
+  NAV_CACHE.clear();
+  return NAV;
+}
+/* The town is rebuilt for all sorts of reasons -- a season, a fire, a sign
+   repainted -- and laying the walkable grid again costs over half a
+   second. It is only laid again when something anyone could walk into has
+   actually moved, appeared or gone. */
+var NAV_DIRTY=false, NAV_SIG="";
+function navSig(){
+  var a=[], i;
+  for(i=0;i<B.length;i++){ var b=B[i]; if(b.kind==="market"||!b.w||!b.d)continue; a.push(Math.round(b.x*10)+","+Math.round(b.z*10)+","+Math.round(b.w*10)+","+Math.round(b.d*10)); }
+  for(i=0;i<PROPS.length;i++){ var q=PROPS[i]; a.push(Math.round(q.x*10)+","+Math.round(q.z*10)+","+Math.round(q.w*10)+","+Math.round(q.d*10)); }
+  return a.join(";");
+}
+function navGet(){
+  if(!NAV||NAV.src!==B){ NAV_SIG=navSig(); NAV_DIRTY=false; return navBuild(); }
+  if(NAV_DIRTY){ NAV_DIRTY=false; var sg=navSig(); if(sg!==NAV_SIG){ NAV_SIG=sg; navBuild(); } }
+  return NAV;
+}
+function navGridAt(x,z){
+  var N=navGet();
+  for(var i=0;i<N.grids.length;i++){ var g=N.grids[i];
+    if(x>=g.x0&&z>=g.z0&&x<g.x0+(g.W-1)*NAV_CELL&&z<g.z0+(g.H-1)*NAV_CELL)return g; }
+  return null;
+}
+function navCell(g,x,z){ var cx=Math.round((x-g.x0)/NAV_CELL), cz=Math.round((z-g.z0)/NAV_CELL);
+  if(cx<0||cz<0||cx>=g.W||cz>=g.H)return -1; return cz*g.W+cx; }
+function navFree(g,bl,k,rad){
+  if(k>=0&&!bl[k])return k;
+  if(k<0)return -1;
+  var cx=k%g.W, cz=Math.floor(k/g.W), best=-1, bd=1e9;
+  for(var dz=-rad;dz<=rad;dz++)for(var dx=-rad;dx<=rad;dx++){ var x=cx+dx, z=cz+dz;
+    if(x<0||z<0||x>=g.W||z>=g.H)continue; var kk=z*g.W+x; if(bl[kk])continue;
+    var d=dx*dx+dz*dz; if(d<bd){bd=d;best=kk;} }
+  return best;
+}
+/* can a walker see from cell a to cell b without crossing a blocked cell */
+function navLOS(g,bl,a,b){
+  var ax=a%g.W, az=Math.floor(a/g.W), bx=b%g.W, bz=Math.floor(b/g.W);
+  var dx=bx-ax, dz=bz-az, n=Math.max(Math.abs(dx),Math.abs(dz))*3;
+  for(var i=1;i<n;i++){ var t=i/n, x=Math.round(ax+dx*t), z=Math.round(az+dz*t); if(bl[z*g.W+x])return false; }
+  return true;
+}
+function navPlan(g,pad,sx,sz,ex,ez){
+  var bl=g.layers[pad]; if(!bl)return null;
+  var s=navFree(g,bl,navCell(g,sx,sz),6), e=navFree(g,bl,navCell(g,ex,ez),8);
+  if(s<0||e<0)return null;
+  var ck=g.town+"|"+pad+"|"+s+"|"+e, hit=NAV_CACHE.get(ck);
+  if(hit){ NAV_STATS.hits++; NAV_CACHE.delete(ck); NAV_CACHE.set(ck,hit); return hit.slice(); }
+  var W=g.W, sid=++g.sid, heap=g.heap, hk=g.hk, hn=0, G2=g.g, F=g.from, ST=g.stamp, CL=g.closed;
+  var exx=e%W, ezz=Math.floor(e/W);
+  function push(k,f){ var i=hn++; heap[i]=k; hk[i]=f;
+    while(i>0){ var p=(i-1)>>1; if(hk[p]<=hk[i])break; var t=heap[p];heap[p]=heap[i];heap[i]=t; var tf=hk[p];hk[p]=hk[i];hk[i]=tf; i=p; } }
+  function pop(){ var top=heap[0]; hn--; if(hn>0){ heap[0]=heap[hn]; hk[0]=hk[hn]; var i=0;
+      for(;;){ var l=2*i+1, r=l+1, m=i; if(l<hn&&hk[l]<hk[m])m=l; if(r<hn&&hk[r]<hk[m])m=r; if(m===i)break;
+        var t=heap[m];heap[m]=heap[i];heap[i]=t; var tf=hk[m];hk[m]=hk[i];hk[i]=tf; i=m; } } return top; }
+  /* leaning on the heuristic finds a route in a fraction of the search
+     for a route a few per cent longer -- a walker takes the obvious way */
+  function hh(k){ var dx=Math.abs(k%W-exx), dz=Math.abs(Math.floor(k/W)-ezz); return 1.35*((dx+dz)+(1.4142-2)*Math.min(dx,dz)); }
+  ST[s]=sid; G2[s]=0; F[s]=-1; push(s,hh(s));
+  var found=false, steps=0;
+  while(hn>0&&steps++<24000){
+    var cur=pop(); if(CL[cur]===sid)continue; CL[cur]=sid;
+    if(cur===e){found=true;break;}
+    var cx=cur%W, cz=Math.floor(cur/W), gc=G2[cur];
+    for(var d=0;d<8;d++){
+      var ddx=NAV_DX[d], ddz=NAV_DZ[d], nx=cx+ddx, nz=cz+ddz;
+      if(nx<0||nz<0||nx>=W||nz>=g.H)continue;
+      var nk=nz*W+nx; if(bl[nk]||CL[nk]===sid)continue;
+      if(ddx&&ddz&&(bl[cz*W+nx]||bl[nz*W+cx]))continue;
+      var ng=gc+((ddx&&ddz)?1.4142:1);
+      if(ST[nk]!==sid||ng<G2[nk]){ ST[nk]=sid; G2[nk]=ng; F[nk]=cur; push(nk,ng+hh(nk)); } }
+  }
+  NAV_STATS.plans++;
+  if(!found){ NAV_STATS.fails++; return null; }
+  var cells=[], k=e, guard=0; while(k>=0&&guard++<100000){ cells.push(k); if(k===s)break; k=F[k]; }
+  cells.reverse();
+  /* straightened: from each corner, as far along as he can see */
+  var pts=[], i=0;
+  while(i<cells.length-1){ var j=cells.length-1; while(j>i+1&&!navLOS(g,bl,cells[i],cells[j]))j--; pts.push(cells[j]); i=j; }
+  var out=pts.map(function(c){ return [g.x0+(c%W)*NAV_CELL, g.z0+Math.floor(c/W)*NAV_CELL]; });
+  NAV_CACHE.set(ck,out); if(NAV_CACHE.size>NAV_CACHE_MAX)NAV_CACHE.delete(NAV_CACHE.keys().next().value);
+  return out.slice();
+}
+var NAV_DX=[1,-1,0,0,1,1,-1,-1], NAV_DZ=[0,0,1,-1,1,-1,1,-1];
+/* the next point to walk at, or null to leave it to the old mover */
+function navNext(m,tx,tz,pad){
+  if(tx===undefined||tz===undefined||!isFinite(tx)||!isFinite(tz))return null;
+  if(inRoom&&G&&inRoom())return null;
+  var g=navGridAt(m.x,m.z); if(!g||navGridAt(tx,tz)!==g)return null;
+  pad=(pad===undefined)?navPadOf(m):pad;
+  var nv=m.nav;
+  /* the route remembers which town's grid by number: it used to hold the
+     grid itself, and every save then wrote out the whole walkable grid --
+     half a million numbers -- once for every person walking */
+  var stale=!nv||nv.pad!==pad||Math.hypot(nv.gx-tx,nv.gz-tz)>1.5||nv.gi!==g.town;
+  if(!stale&&nv.pts.length&&nv.i<nv.pts.length){
+    /* pushed well off his line by a crowd: plan again from where he is */
+    var p=nv.pts[nv.i]; if(Math.hypot(p[0]-m.x,p[1]-m.z)>nv.leg+3)stale=true;
+  }
+  if(stale){
+    if(NAV_PLANS_LEFT<=0)return (nv&&nv.pts&&nv.i<nv.pts.length)?nv.pts[nv.i]:null;
+    NAV_PLANS_LEFT--;
+    var pts=navPlan(g,pad,m.x,m.z,tx,tz);
+    if(!pts){ m.nav={pad:pad,gx:tx,gz:tz,gi:g.town,pts:[],i:0,leg:0,none:true}; return null; }
+    nv=m.nav={pad:pad,gx:tx,gz:tz,gi:g.town,pts:pts,i:0,leg:0};
+    if(pts.length)nv.leg=Math.hypot(pts[0][0]-m.x,pts[0][1]-m.z);
+  }
+  if(nv.none)return null;
+  /* no closer to the corner he is walking at for a second and more (a
+     crowd, a cart that moved in): plan again from where he stands */
+  if(nv.i<nv.pts.length){ var qd=Math.hypot(nv.pts[nv.i][0]-m.x,nv.pts[nv.i][1]-m.z);
+    if(nv.bd===undefined||qd<nv.bd-0.03){ nv.bd=qd; nv.np=0; }
+    else if(++nv.np>45){ nv.np=0; nv.bd=undefined; if(NAV_PLANS_LEFT>0){ m.nav=null; return navNext(m,tx,tz,pad); } } }
+  while(nv.i<nv.pts.length){ var q=nv.pts[nv.i];
+    if(Math.hypot(q[0]-m.x,q[1]-m.z)<0.6){ nv.i++; nv.bd=undefined;
+      if(nv.i<nv.pts.length){ var q2=nv.pts[nv.i]; nv.leg=Math.hypot(q2[0]-q[0],q2[1]-q[1]); } continue; }
+    return q; }
+  return [tx,tz];
+}
 function walkerAdvance(m){
+  var np=navNext(m,m.tx,m.tz);
+  if(np)return np;
+  return walkerAdvance0(m);
+}
+function walkerAdvance0(m){
   if(m.leg&&m.leg.length){
     var L=m.leg[0];
     /* Reaching a corner used to be the only way to be done with it. In a
@@ -5409,7 +5588,7 @@ function syncHeads(){
   }
 }
 var NPCUID=1;
-function npcUid(){return NPCUID++;}
+function npcUid(){ if(G)G.npcUidNext=NPCUID+1; return NPCUID++; }
 function npcByUid(u){
   if(u===null||u===undefined)return null;
   for(var i=0;i<G.npcs.length;i++)if(G.npcs[i].uid===u)return G.npcs[i];
@@ -8156,7 +8335,11 @@ function auditLive(dt){
   }
 }
 function buildGeo(){
-  BGRID=null;   /* a house may have grown, gone or been built: re-bucket them */
+  GH_ON=true;
+  try{ return buildGeo0(); } finally { GH_ON=false; }
+}
+function buildGeo0(){
+  BGRID=null; NAV_DIRTY=true;   /* the walkable grid is checked against the rebuilt town */   /* a house may have grown, gone or been built: re-bucket them */
   GLDIRTY=true;
   paveReset();
   GEO=[];
@@ -8559,8 +8742,9 @@ function buildGeo(){
   CURY=0;
   lampG(-6.2,5.6);
   lampG(6.2,-5.6);
-  cartG(9.4,-1.2);   /* was hard against the fountain's steps: the two made one wall
-                        with a pocket people packed into */
+  /* (the market cart is gone from the square: wherever it stood, it and the
+     fountain and a stall closed the ways between them to the watch, who
+     had to go round the whole cluster to cross the square) */
   for(i=0;i<B.length;i++)if(B[i].id==="shop")cartG(B[i].x-B[i].w*0.55-1.4,B[i].z+B[i].d*0.3);
 
   /* buildings */
@@ -14976,7 +15160,7 @@ function step(dt){
     } else {
       /* head for the next corner of the route rather than straight at the
          destination, so a walker goes round the block instead of into it */
-      var wp=walkerAdvance(m), dwp=unstick(m,wp[0],wp[1],dt); if(dwp)wp=dwp;
+      var wp=walkerAdvance(m), dwp=(m.nav&&!m.nav.none)?null:unstick(m,wp[0],wp[1],dt); if(dwp)wp=dwp;
       var lx=wp[0]-m.x, lz=wp[1]-m.z, ld=Math.hypot(lx,lz)||1;
       var mAmt=m.sp*dt*WALK_MULT, mox=m.x, moz=m.z;
       slideTo(m,m.x+lx/ld*mAmt,m.z+lz/ld*mAmt);
@@ -15277,7 +15461,7 @@ function step(dt){
         if(cd>2.0){ aimX=g.callX; aimZ=g.callZ; }
         else { g.called=0; if(gd>watchRange()||lineBlocked(g.x,g.z,G.px,G.pz))g.cool=20; }
       }
-      var gdw=unstick(g,aimX,aimZ,dt); if(gdw){ aimX=gdw[0]; aimZ=gdw[1]; }
+      var gdw=navNext(g,aimX,aimZ,GUARD_PAD)||unstick(g,aimX,aimZ,dt); if(gdw){ aimX=gdw[0]; aimZ=gdw[1]; }
       gx=aimX-g.x; gz=aimZ-g.z; gd=Math.hypot(gx,gz)||1;
       var ux3=gx/gd, uz3=gz/gd, gox=g.x, goz=g.z;
       /* A watchman walked straight at you and slideTo tried the direct move,
@@ -15325,7 +15509,7 @@ function step(dt){
         if(gsp){ g.tx=gsp[0]; g.tz=gsp[1]; }
         else { var GT=TOWNS[g.town||0]; g.tx=GT.x; g.tz=GT.z; }
       }
-      var gpw=unstick(g,g.tx,g.tz,dt), gtx=gpw?gpw[0]:g.tx, gtz=gpw?gpw[1]:g.tz;
+      var gpw=navNext(g,g.tx,g.tz,GUARD_PAD)||unstick(g,g.tx,g.tz,dt), gtx=gpw?gpw[0]:g.tx, gtz=gpw?gpw[1]:g.tz;
       var ex=gtx-g.x,ez=gtz-g.z,ed=Math.hypot(ex,ez);
       if(ed>0.1){
         var gAmt=g.sp*dt*WALK_MULT;
@@ -16612,6 +16796,12 @@ function famBodies(){
   for(var i=0;i<G.fam.length;i++){
     var p=G.fam[i];
     var b=npcByUid(p.uid);
+    /* a family record's number can name a townsman who is not family at
+       all (the numbering restarted on a resume): he is not this body --
+       he was being taken off the street as your own "body" on every load.
+       Only a body that is marked as this relative is his. */
+    if(b&&b.famId!==undefined&&b.famId!==p.id){ p.uid=null; b=null; }
+    if(b&&b.famId===undefined&&(b.burgher||b.ownerOf||b.head!==undefined||b.vend)){ p.uid=null; b=null; }
     if(b&&(p.id===G.me||!p.alive)){removeNpc(b,true);continue;}
     if(b){if(!b.famId)b.famId=p.id;continue;}
     if(p.id!==G.me&&famEligible(p))famSpawnBody(p);
@@ -19831,6 +20021,7 @@ function loop(ts){
      metre per frame, straight through a lamp post; the world is stepped in
      slices of at most an eighth of a second instead, and if the device
      cannot keep up it simply runs a little slower rather than grinding */
+  NAV_PLANS_LEFT=NAV_PLAN_BUDGET;
   if(G&&!G.over){
     var sdt=dt*(speed>0?speed:0.05), nsl=Math.min(6,Math.max(1,Math.ceil(sdt/0.125)));
     var slT0=performance.now();
@@ -20236,7 +20427,12 @@ var SAVE_TIMER=null;
 function save(){
   if(!G)return;
   try{
-    var data=JSON.stringify(G);
+    /* A save is the game, not its scratch paper: routes, detours and
+       progress checks are worked out afresh after a load, and nothing that
+       is a typed array (a grid, a cache) belongs in a save at all. */
+    var t0=(typeof performance!=="undefined")?performance.now():0;
+    var data=JSON.stringify(G,saveKeep);
+    if(typeof performance!=="undefined"){ var ms=performance.now()-t0; if(ms>60)trace("SAVE slow: "+Math.round(ms)+" ms, "+Math.round(data.length/1024)+" KB"); }
     if(window.storage&&window.storage.set){
       window.storage.set(KEY,data).catch(function(e){});
     }
@@ -20244,6 +20440,12 @@ function save(){
       try{localStorage.setItem(KEY,data);}catch(e){}
     }
   }catch(e){}
+}
+var SAVE_SKIP={nav:1,dtour:1,dtourT:1,dpath:1,__cpT:1,__cpD:1,__cpK:1,__cpX:1,__cpZ:1,__tries:1,detour:1,detourT:1,_accCache:1,__blk:1};
+function saveKeep(k,v){
+  if(SAVE_SKIP[k])return undefined;
+  if(v&&typeof v==="object"&&ArrayBuffer.isView&&ArrayBuffer.isView(v))return undefined;
+  return v;
 }
 function autoSave(){
   save();
@@ -20610,6 +20812,13 @@ $("resume").onclick=function(){
   load(function(s){
     if(!s)return;
     G=s;if(G.over)G.over=null;
+    /* the numbering of townsfolk was not part of the save: after a resume
+       the next newcomer was number 1 again, sharing a number with someone
+       already in the street -- and whoever looked people up by number
+       (spouses, heads of houses, owners) found the wrong one, or dropped
+       one of the pair as a duplicate. It carries on from the highest. */
+    (function(){ var mx=0; ["npcs","workerNpcs","carterNpcs","guards","vendors"].forEach(function(k){ (G[k]||[]).forEach(function(m){ if(m&&typeof m.uid==="number"&&m.uid>mx)mx=m.uid; }); });
+      if(typeof G.npcUidNext==="number"&&G.npcUidNext>mx)mx=G.npcUidNext-1; NPCUID=mx+1; })();
     if(!G.workerNpcs)G.workerNpcs=[];
     if(G.guild===undefined)G.guild=false;
     if(G.trial===undefined)G.trial=null;
