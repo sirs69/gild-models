@@ -92,6 +92,11 @@ body.hc #cheatbox{background:#111}
 /* ── the four of the house ── */
 .roster{position:absolute;left:10px;top:10px;display:flex;gap:6px;z-index:5}
 .fxbar{position:absolute;left:10px;display:flex;flex-wrap:wrap;gap:4px;z-index:5;max-width:55%;pointer-events:auto}
+.tbar{position:absolute;right:10px;display:flex;flex-direction:column;gap:5px;z-index:5}
+.tb{display:flex;align-items:center;gap:6px;background:rgba(21,17,9,.72);border:1px solid var(--edge);border-radius:9px;
+  padding:3px 9px 3px 5px;color:var(--bone);font-size:calc(12px * var(--s));cursor:pointer;min-height:calc(30px * var(--s))}
+.tb.on{border-color:var(--brass);color:var(--brass)}
+.tb svg{width:calc(22px * var(--s));height:calc(22px * var(--s));flex:none}
 .fx{background:rgba(21,17,9,.78);border:1px solid var(--edge);border-radius:11px;padding:1px 8px;
   font-size:calc(11.5px * var(--s));line-height:1.6;color:var(--bone);cursor:pointer;white-space:nowrap}
 .fx.bad{border-color:var(--blood);color:#eab4a8}
@@ -264,7 +269,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.048</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.060</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -334,6 +339,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
       <div class="bbar" id="bbar"></div>
       <div class="roster" id="roster"></div>
       <div class="fxbar" id="fxbar"></div>
+      <div class="tbar" id="tbar"></div>
       <button id="stepOutBtn" onclick="walkOutOfCourt()" style="display:none;position:absolute;
         left:50%;bottom:14px;transform:translateX(-50%);z-index:6;padding:8px 16px;
         background:rgba(20,16,10,.88);color:#F2E6C8;border:1px solid #B8923E;border-radius:10px;
@@ -440,8 +446,10 @@ var RECIPE=2;
    land where they did. What changes is that hiring is now a decision — a
    fourth hand costs real money against what he adds — rather than something
    you do the moment you can afford it. */
-function handWage(){return 78+(G.shop&&G.shop.lvl?G.shop.lvl:1)*42;}
-function carterWage(){return 66+(G.shop&&G.shop.lvl?G.shop.lvl:1)*30;}
+/* a workshop's wages follow its own size: a new branch at level one pays
+   level-one wages even while the house's main shop is at level three */
+function handWage(lv){return 78+(lv||(G.shop&&G.shop.lvl?G.shop.lvl:1))*42;}
+function carterWage(lv){return 66+(lv||(G.shop&&G.shop.lvl?G.shop.lvl:1))*30;}
 var DAYH=24;              /* in-game hours per day */
 /* A day used to pass in two real minutes, which is a fine rate for running
    an economy and far too fast for watching a town. At nine seconds an hour
@@ -480,9 +488,9 @@ var GOODS={
    trades now make fewer, better pieces — a smith turning out fifty tools is
    worth far more than one turning out eighty that nobody buys. */
 var TRADES={
-  baker:{n:"Baker",shop:"The Bakehouse",inG:"grain",outG:"bread",rate:.65,wall:[214,196,158],roof:[142,74,44],
+  baker:{n:"Baker",shop:"The Bakehouse",inG:"grain",outG:"bread",rate:.67,wall:[214,196,158],roof:[142,74,44],
     blurb:"Grain in, bread out. Everybody eats, and in a hard winter they pay whatever you ask."},
-  smith:{n:"Smith",shop:"The Smithy",inG:"iron",outG:"tools",rate:.325,wall:[198,186,160],roof:[92,88,98],
+  smith:{n:"Smith",shop:"The Smithy",inG:"iron",outG:"tools",rate:.30,wall:[198,186,160],roof:[92,88,98],
     blurb:"Two bars of iron into one tool worth four of them. Slow work, heavy purses."},
   apothecary:{n:"Apothecary",shop:"The Apothecary",inG:"herbs",outG:"remedy",rate:.479,wall:[196,204,182],roof:[124,106,62],
     blurb:"Herbs and patience. The council listens to a man who has kept them alive."},
@@ -498,7 +506,7 @@ var TRADES={
      actually is: a literate man who reads, compounds remedies, and has
      the ear of the church — the medieval clerk in the old sense of the
      word. The trade key stays as it is so every save still loads. */
-  physician:{n:"Scholar",shop:"The Scholar's House",inG:"herbs",outG:"physick",rate:.455,
+  physician:{n:"Scholar",shop:"The Scholar's House",inG:"herbs",outG:"physick",rate:.58,
     wall:[206,206,198],roof:[104,110,116],service:true,
     blurb:"Herbs into physick, letters into influence. You are paid by the sick and heard by the church — a poor week when the city is well, and a strong voice when it is not."}
 };
@@ -511,8 +519,8 @@ var TRADES={
    the life holding it. */
 var TITLES=[
   {n:"Stranger",cost:0,rep:0},{n:"Freeman",cost:900,rep:30},{n:"Burgher",cost:4400,rep:45},
-  {n:"Patrician",cost:18500,rep:57},{n:"Alderman",cost:44000,rep:69},{n:"Councillor",cost:96000,rep:80},
-  {n:"Burgomaster of Gild",cost:220000,rep:88}
+  {n:"Patrician",cost:18500,rep:57},{n:"Alderman",cost:44000,rep:69},{n:"Councillor",cost:160000,rep:80},
+  {n:"Burgomaster of Gild",cost:380000,rep:88}
 ];
 
 var FIRST_M=["Aldric","Bertold","Dietrich","Gerhart","Joos","Lubbert","Otho","Reinald","Tybalt","Warin","Anselm"];
@@ -1285,8 +1293,13 @@ function deedValue(b){
   /* size, and how central the plot is: a house on the square is worth more
      than the same house against the wall */
   var area=b.w*b.d;
-  var far=Math.hypot(b.x,b.z)/WALLR;
-  return Math.round((320+area*44)*(1.55-far*0.62));
+  /* measured from its own town's square: measured from Gild's, every house
+     in Veldkirk sat two and a half walls out and was worth next to nothing.
+     Veldkirk is the cheaper town -- about seven tenths of Gild for the same
+     house in the same spot -- and its rents follow. */
+  var T=TOWNS[b.town||0], R=(b.town||0)===0?WALLR:T.r;
+  var far=Math.min(1.6,Math.hypot(b.x-T.x,b.z-T.z)/R);
+  return Math.round((320+area*44)*(1.55-far*0.62)*([1,0.72,0.6][b.town||0]||1));
 }
 /* Yield. At 2.8% a deed paid for itself in thirty-five days, which made
    the whole street a better business than the workshop and a shortcut to
@@ -1595,6 +1608,8 @@ function fxList(){
   else if(G.heat>=10)L.push({c:"warn",t:"Watched",d:"The watch has noticed you (heat "+Math.round(G.heat)+")."});
   if(G.plagueDays>0)L.push({c:"bad",t:"Pestilence in town",d:"The pestilence is in the town for another "+G.plagueDays+" day"+(G.plagueDays===1?"":"s")+". Keep your people out of crowds."});
   if(FIGHT&&!FIGHT.over)L.push({c:"bad",t:"Fighting",d:"Steel is out."});
+  if(G.contract)L.push({c:"good",t:"Contract "+G.contract.done+"/"+G.contract.n,d:"Veldkirk's hall wants "+G.contract.n+" "+GOODS[G.contract.good].n.toLowerCase()+" by the end of day "+(G.contract.until+1)+" at "+fmt(G.contract.pay)+" each. Your carter sends them up the road first."});
+  else if(G.contractOffer)L.push({c:"warn",t:"Veldkirk wants "+GOODS[G.contractOffer.good].n.toLowerCase(),d:"The staple hall in Veldkirk has posted a contract for "+G.contractOffer.n+" "+GOODS[G.contractOffer.good].n.toLowerCase()+" at "+fmt(G.contractOffer.pay)+" each. Go to the hall to take it."});
   if(G.eq){ var eqn=[]; for(var sl in G.eq)if(G.eq[sl]&&ITEMS[G.eq[sl]])eqn.push(ITEMS[G.eq[sl]].n);
     if(eqn.length)L.push({c:"good",t:"Carrying "+eqn.length,d:"About you: "+eqn.join(", ")+"."}); }
   return L;
@@ -1608,6 +1623,38 @@ function drawFx(){
   el.innerHTML=L.map(function(f,i){return '<span class="fx '+f.c+'" onclick="fxTap('+i+')">'+esc(f.t)+'</span>';}).join("");
 }
 function fxTap(i){ var f=fxList()[i]; if(f)say(f.t,f.d); }
+/* ── the towns, one tap each ──────────────────────────────────────────
+   A little market stall for every town, under the speed buttons. Tap your
+   own town's and you walk to its square; tap another and you take the road
+   there and you set off running down the road to its market. */
+var TBKEY="";
+function tbIcon(col){
+  return '<svg viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="3" fill="#8a6a44"/><rect x="5" y="14" width="2" height="7" fill="#6a4e32"/>'+
+    '<rect x="17" y="14" width="2" height="7" fill="#6a4e32"/><path d="M2 11 L5 4 L19 4 L22 11 Z" fill="'+col+'"/>'+
+    '<path d="M8 4 L7 11 M12 4 L12 11 M16 4 L17 11" stroke="rgba(255,255,255,.35)" stroke-width="1.2"/><rect x="8" y="9" width="3" height="2" fill="#d8c080"/><rect x="13" y="9" width="3" height="2" fill="#b86a4a"/></svg>';
+}
+function drawTbar(){
+  var el=$("tbar"); if(!el||!G)return;
+  var sp=document.querySelector(".speed"); if(sp)el.style.top=(sp.offsetTop+sp.offsetHeight+6)+"px";
+  el.style.display=inRoom()?"none":"flex";
+  var here=playerTown(), key=here+"|"+TOWNS.length;
+  if(key===TBKEY)return; TBKEY=key;
+  var COLS=["#b0443a","#3a5c8c","#5c7a3a"];
+  el.innerHTML=TOWNS.map(function(T,i){ return '<div class="tb'+(i===here?' on':'')+'" onclick="travelTo('+i+')">'+tbIcon(COLS[i%3])+esc(T.n)+'</div>'; }).join("");
+}
+/* No magic: a tap sets you running there, down the real road, through
+   whatever lies between -- the same streets, the same woods, the same
+   robbers. Tap your own town's stall and you run to its square. */
+function travelTo(t){
+  if(!G||G.over)return;
+  if(G.scene&&G.scene!=="city"&&!inRoom())return say("Not now","You cannot leave where you are.");
+  if(inRoom()){ try{ leaveRoom(); }catch(e){} }
+  var mk=B.filter(function(b){return b.kind==="market"&&(b.town||0)===t;})[0]; if(!mk)return;
+  goTo(mk.dx,mk.dz);
+  G.run=true;
+  if(playerTown()!==t)note("Set off running for "+TOWNS[t].n);
+  TBKEY=""; layout();
+}
 /* ── what you carry ───────────────────────────────────────────────────
    Arms, armour and small things of your own, bought at the market and
    worn in five places: the hand, the body, the head and two charms. Each
@@ -1679,6 +1726,86 @@ function invUnequip(sl){ invInit(); delete G.eq[sl]; invSheet(); layout(); }
 function invSell(k){ invInit(); var it=ITEMS[k]; if(!it)return; var i=G.inv.indexOf(k); if(i<0)return;
   for(var sl in G.eq)if(G.eq[sl]===k)delete G.eq[sl];
   G.inv.splice(i,1); G.coin+=Math.round(it.p/2); note("Sold "+it.n.toLowerCase()); invSheet(); layout(); }
+/* ── Veldkirk's contracts ───────────────────────────────────────────────
+   Every few days the staple hall wants a quantity of something, by a day,
+   at a price over its market -- and it only ever asks for what your bench
+   makes. You take it in person at the hall; your carter sends the goods up
+   the road before he sells anything else; filled, it pays and Veldkirk
+   thinks the better of you. Late, the hall remembers that too. */
+/* ── branch workshops ───────────────────────────────────────────────────
+   Veldkirk's empty workshop and Tannholt's sawpit shed stood locked with a
+   note saying "that comes later". They can be taken now as branches of
+   your own trade: rank-limited like any second workshop, staffed and paid
+   separately, and trading on their own town's square -- which is where
+   Veldkirk's cheap raw stuff and Tannholt's dear tools finally pay. */
+function branchMakes(t,g){ var S=G&&G.shops||[]; for(var i=0;i<S.length;i++){ var sh=S[i]; if((sh.town||0)===t&&t!==0&&(sh.workers||0)>0&&TRADES[sh.trade||G.trade]&&TRADES[sh.trade||G.trade].outG===g)return true; } return false; }
+function branchIn(t,trade){ var S=G.shops||[]; for(var i=0;i<S.length;i++)if((S[i].town||0)===t&&(S[i].trade||G.trade)===trade)return true; return false; }
+/* Balanced over 250 played days: at 3,400 a lease and a 45% share of the
+   town's trade, a house with two branches reached Burgomaster by day 125
+   against 220 without. At these figures a branch is a solid investment
+   that pays for itself in about three weeks, not a second main shop. */
+function branchCost(b){ return (b&&b.town===2)?9500:12000; }
+var BRANCH_RANK=3;   /* the halls lease only to a Patrician or better */
+function branchRent(t){ return t===2?110:140; }
+function takeBranch(id){
+  var b=B.filter(function(x){return x.id===id;})[0]; if(!b||b.kind!=="vacant")return;
+  var tr=TRADES[G.trade]; if(!tr)return;
+  if(!G.shops)G.shops=[G.shop];
+  if(G.title<BRANCH_RANK)return say("Not yet","The hall leases only to a "+TITLES[BRANCH_RANK].n+" or better.");
+  var lim=Math.max(1,G.title);
+  if(G.shops.length>=lim)return say("Not yet","A man of your rank may run "+lim+" workshop"+(lim>1?"s":"")+".");
+  var c=branchCost(b); if(G.coin<c)return say("Not enough coin","The lease is "+fmt(c)+".");
+  G.coin-=c;
+  G.shops.push({store_in:0,store_out:0,prog:0,workers:0,carters:0,lvl:1,walkIns:0,walkCoin:0,bId:b.id,trade:G.trade,town:b.town||0});
+  G.deeds=G.deeds||{}; G.deeds[b.id]=1;
+  G.rep=clamp(G.rep+2,0,100);
+  note("Took "+b.n+" in "+TOWNS[b.town||0].n+" as a branch");
+  rebuildTownKeepHere();
+  say("A branch in "+TOWNS[b.town||0].n,"The shutters are down and the bench is yours. It needs its own hands and a carter before it makes or sells anything -- take them on here.\n\nStanding +2.");
+  layout();
+}
+function contractTick(){
+  if(!G)return;
+  var tr=TRADES[G.trade]; if(!tr||tr.service)return;       /* the physick trades sell to the sick, not the hall */
+  if(tr.outG==="contraband")return;                       /* and a staple hall does not put its seal on smuggled goods */
+  if(G.contract&&G.day>G.contract.until){
+    note("Veldkirk contract missed: "+G.contract.done+" of "+G.contract.n+" "+GOODS[G.contract.good].n.toLowerCase());
+    say("A contract missed","The staple hall wanted "+G.contract.n+" "+GOODS[G.contract.good].n.toLowerCase()+" and had "+G.contract.done+". They keep the ones delivered and will not forget the rest.\n\nStanding -3.");
+    G.rep=clamp(G.rep-3,0,100); G.contract=null;
+  }
+  if(G.contractOffer&&G.day>G.contractOffer.until)G.contractOffer=null;
+  if(!G.contract&&!G.contractOffer&&Math.random()<0.25){
+    var daily=tr.rate*(1+(G.shop.workers||0)*0.72)*((G.shop.lvl||1)*0.85+0.25)*24;
+    /* a third to a half of a day's work: something a carter can take up
+       the road around his other trips in three days */
+    var n=Math.max(6,Math.min(40,Math.round(daily*(0.3+Math.random()*0.2))));
+    var pay=Math.round(veldBase(tr.outG)*(1.18+Math.random()*0.12));
+    G.contractOffer={good:tr.outG,n:n,pay:pay,days:3,until:G.day+2};
+  }
+}
+function contractPanel(){
+  var h='<div class="sub" style="margin-top:10px">Contracts</div>';
+  if(G.contract){ var c=G.contract;
+    return h+'<p>Yours: '+c.n+' '+esc(GOODS[c.good].n.toLowerCase())+' by the end of day '+(c.until+1)+' at '+fmt(c.pay)+' each. '+c.done+' delivered. Your carter sends them up the road before he sells anything else.</p>'; }
+  var o=G.contractOffer, tr=TRADES[G.trade];
+  if(!o)return h+'<p class="fine">Nothing posted today'+((tr&&tr.service)?' -- and the hall has never bought physick by contract':((tr&&tr.outG==="contraband")?' -- and nothing you make could go through a staple hall\'s books':''))+'.</p>';
+  var mk=Math.round(G.mkt2[o.good]||veldBase(o.good));
+  return h+'<p>Wanted: <b>'+o.n+' '+esc(GOODS[o.good].n.toLowerCase())+'</b> within '+o.days+' days, at '+fmt(o.pay)+' each ('+fmt(o.pay*o.n)+' in all; the square pays about '+fmt(mk)+'). Late or short costs 3 standing.</p>'+
+    '<button class="btn gold" onclick="contractTake()">Take the contract</button>';
+}
+function contractTake(){
+  var o=G.contractOffer; if(!o)return;
+  if(!(G.shop.carters>0))return say("No carter","The hall wants the goods brought up the road. Hire a carter first.");
+  G.contract={good:o.good,n:o.n,done:0,pay:o.pay,until:G.day+o.days};
+  G.contractOffer=null; note("Took a Veldkirk contract: "+o.n+" "+GOODS[o.good].n.toLowerCase());
+  layout();
+}
+function contractDone(){
+  var c=G.contract; if(!c)return;
+  note("Veldkirk contract filled: "+c.n+" "+GOODS[c.good].n.toLowerCase());
+  say("Contract filled","The staple hall has its "+c.n+" "+GOODS[c.good].n.toLowerCase()+", paid at "+fmt(c.pay)+" each. Veldkirk will ask you again.\n\nStanding +1.");
+  G.rep=clamp(G.rep+1,0,100); G.contract=null;
+}
 function holdings(){
   if(!G)return;
   var mine=ownedBuildings(), i;
@@ -2240,7 +2367,18 @@ function starQuads(pushFn){
 /* Veldkirk is farm country: it grows grain, herbs and hides, and has to
    have its tools and remedies carted in. That standing difference is what
    makes the road worth walking with a full pack. */
-var VELD_BIAS={grain:0.70,herbs:0.78,hides:0.74,bread:0.92,iron:1.18,tools:1.32,remedy:1.28,contraband:1.34};
+/* Balanced over 250 played days (shindig/balance.js): with tools selling
+   32% dearer in Veldkirk the smith reached Burgomaster on day 107 and the
+   physician, who has no road trade, on day 199. The towns still differ --
+   raw stuff cheaper there, made goods dearer -- by enough to be worth the
+   road now and then, not enough to run the whole trade up it. */
+/* Tannholt lives off the forest: hides and herbs cheap, bread and
+   iron dear, and it pays well for tools and physick it cannot make. */
+var TANN_BIAS={grain:1.10,herbs:0.80,hides:0.76,bread:1.12,iron:1.14,tools:1.16,remedy:1.10,contraband:1.14,physick:1.10};
+function tannBase(g){return GOODS[g].b*(TANN_BIAS[g]||1);}
+function townBase(t,g){return t===1?veldBase(g):(t===2?tannBase(g):GOODS[g].b);}
+function townMkt(t){ if(t===2){ if(!G.mkt3){G.mkt3={};for(var g in GOODS)G.mkt3[g]=tannBase(g);} return G.mkt3; } return t===1?G.mkt2:G.mkt; }
+var VELD_BIAS={grain:0.80,herbs:0.82,hides:0.80,bread:0.94,iron:1.12,tools:1.18,remedy:1.16,contraband:1.20};
 function veldBase(g){return GOODS[g].b*(VELD_BIAS[g]||1);}
 /* One day of the market: the outside world brings what it brings, the town
    eats, and the price settles on what is left. */
@@ -2403,8 +2541,9 @@ function marketDay(){
   houseThugDay();
   if(!G.sup)G.sup={0:{},1:{}};
   if(!G.cover)G.cover={0:{},1:{}};
-  for(var t=0;t<2;t++){
-    var M=(t===1)?G.mkt2:G.mkt;
+  for(var t=0;t<TOWNS.length;t++){
+    if(!G.sup[t])G.sup[t]={};
+    var M=townMkt(t);
     if(!G.cover[t])G.cover[t]={};
     for(var g in GOODS){
       var d=Math.max(0.01,demandFor(t,g));
@@ -2433,7 +2572,10 @@ function marketDay(){
         var R3=G.rivals[rv];
         if(R3&&R3.trade&&TRADES[R3.trade].outG===g)alive+=R3.share||0;
       }
-      addSupply(t,g,base*(anon+alive));
+      /* a branch of yours in this town is its maker of that good now: the
+         carts that used to bring it in from outside bring less */
+      var displaced=branchMakes(t,g)?0.10:0;
+      addSupply(t,g,base*(anon+alive)*(1-displaced));
       /* what stands on the stalls this morning, in days of eating */
       var have=supplyOf(t,g);
       G.cover[t][g]=have/d;
@@ -2448,7 +2590,7 @@ function marketDay(){
       if(capped!==null&&want>capped)want=capped;
       M[g]+=(want-M[g])*0.45;
       M[g]*=0.985+Math.random()*0.03;
-      var base=(t===1)?veldBase(g):GOODS[g].b;
+      var base=townBase(t,g);
       M[g]=clamp(M[g],base*0.45,base*2.1);
     }
   }
@@ -2551,7 +2693,7 @@ function coverOf(t,g){
   return 1;
 }
 function priceAtCover(t,g,cover){
-  var base=(t===1)?veldBase(g):GOODS[g].b;
+  var base=townBase(t,g);
   /* A non-finite cover returns a non-finite price, and because the market
      eases toward the price it wants (M[g]+=(want-M[g])*0.45) a single NaN
      poisons that good's price for the rest of the game with nothing thrown
@@ -2568,7 +2710,7 @@ function scarcityPrice(t,g){return priceAtCover(t,g,coverOf(t,g));}
 /* the market you are standing in */
 function MKT(t){
   if(t===undefined)t=playerTown();
-  return t===1?G.mkt2:G.mkt;
+  return townMkt(t);
 }
 /* ── carts ───────────────────────────────────────────────────────────
    Carrying capacity used to come only from the workshop's size, which left
@@ -2676,7 +2818,10 @@ var TOWNS=[
   {id:0,n:"Gild",     x:0,z:0,    r:64,ring:17.5,padY:0},
   /* room for a second ring of houses. Still barely a third of Gild's
      footprint, which is the point — it is the smaller, rougher place. */
-  {id:1,n:"Veldkirk", x:-46,z:-138, r:36,ring:19.5,padY:7.5}
+  {id:1,n:"Veldkirk", x:-46,z:-138, r:36,ring:19.5,padY:7.5},
+  /* Tannholt: a woodcutters' town in the forest beyond Veldkirk, at the end
+     of a road that winds down through the trees. Smallest of the three. */
+  {id:2,n:"Tannholt", x:62,z:-214, r:30,ring:14.5,padY:3.2}
 ];
 function townOf(x,z){
   var best=0,bd=1e9;
@@ -2735,7 +2880,44 @@ function roadProfileBuild(){
     ROADH.push(hh);
   }
 }
+/* The height of the road used to be set at each of its points and eased
+   between them -- with a point inside a town's edge taking the town's level
+   and the next one out taking the open-road climb. When the road was cut
+   into more, shorter pieces, that step from the town level to the climb
+   happened over four paces instead of thirteen: twice, the road stood up
+   nearly on end (1.4 and 1.7 rise to 1 along). The height is now worked
+   out continuously along the road, and each town's level is blended into
+   the climb over thirty paces past its edge, however the road is cut. */
+function roadL1(){
+  /* how far along the road Veldkirk's end of the old high road lies */
+  if(!ROADCUM)roadInit();
+  var p0=ROAD0[ROAD_VELD_I], best=0, bd=1e9;
+  for(var i=0;i<ROAD.length;i++){ var d=Math.hypot(ROAD[i][0]-p0[0],ROAD[i][1]-p0[1]); if(d<bd){bd=d;best=i;} }
+  return ROADCUM[best];
+}
 function roadHAt(along){
+  if(!ROADCUM)roadInit();
+  along=clamp(along,0,ROADLEN);
+  var L1=roadL1(), hh;
+  if(along<=L1){
+    var t=L1?along/L1:0;
+    var lin=TOWNS[0].padY+(TOWNS[1].padY-TOWNS[0].padY)*t;
+    var wob=Math.sin(t*6.2832*1.15)*2.9+Math.sin(t*6.2832*2.6)*1.15;
+    var ease=Math.min(1,Math.min(t,1-t)*3.6);
+    hh=lin+wob*ease*TERR_AMP;
+  } else {
+    var t2=(along-L1)/Math.max(1,ROADLEN-L1);
+    var lin2=TOWNS[1].padY+(TOWNS[2].padY-TOWNS[1].padY)*t2;
+    var wob2=Math.sin(t2*6.2832*0.9+0.4)*2.0+Math.sin(t2*6.2832*2.1)*0.8;
+    var ease2=Math.min(1,Math.min(t2,1-t2)*3.6);
+    hh=lin2+wob2*ease2*TERR_AMP;
+  }
+  var p=roadAt(along);
+  for(var k=0;k<TOWNS.length;k++){ var T=TOWNS[k], d=Math.hypot(p.x-T.x,p.z-T.z);
+    var w=smoothstep01((d-(T.r+7))/32); hh=T.padY*(1-w)+hh*w; }
+  return hh;
+}
+function roadHAtOld(along){
   if(!ROADH)roadProfileBuild();
   along=clamp(along,0,ROADLEN);
   for(var i=1;i<ROAD.length;i++){
@@ -3220,6 +3402,51 @@ function buildTown(){
   }
   B.push({id:"v_market",n:"Veldkirk Market",x:V.x,z:V.z,dx:V.x,dz:V.z+3.0,
           kind:"market",w:0,d:0,h:0,town:1});
+  /* ── Tannholt, down the forest road ─────────────────────────────────── */
+  var T3=TOWNS[2];
+  function mkT(id,n,deg,w,d,h,wall,roof,kind,extra){
+    var a=deg*Math.PI/180, x=T3.x+Math.cos(a)*T3.ring, z=T3.z+Math.sin(a)*T3.ring;
+    var o={id:id,n:n,x:x,z:z,w:w,d:d,h:h,wall:wall,roof:roof,kind:kind,deg:deg,town:2};
+    var _tl=Math.hypot(x-T3.x,z-T3.z)||1, _ti=Math.max(w,d)/2+1.6;
+    o.dx=x-((x-T3.x)/_tl)*_ti; o.dz=z-((z-T3.z)/_tl)*_ti;
+    if(extra)for(var k in extra)o[k]=extra[k];
+    B.push(o); return o;
+  }
+  /* the road comes in from the north-west, at about 145 degrees: nothing stands there */
+  mkT("t_tavern","The Charcoal Burner",30,7,6,3.4,[168,142,108],[74,58,40],"tavern");
+  mkT("t_house2","A hunter's house",80,5,4.6,3.0,[176,150,116],[80,60,42],"town");
+  mkT("t_church","St Hubert's",195,5.5,7.5,3.8,[196,190,174],[70,80,88],"church",{spire:1});
+  mkT("t_empty","An empty sawpit shed",240,6.5,5.5,3.2,[170,146,112],[84,62,44],"vacant");
+  mkT("t_lodge","The Verderer's Lodge",280,7,5.5,3.6,[182,160,124],[66,52,40],"town");
+  mkT("t_house0","A woodcutter's house",318,5,4.6,3.0,[174,148,114],[78,58,40],"town");
+  mkT("t_house1","A charcoal-burner's house",352,5,4.6,3.0,[168,144,110],[72,56,40],"town");
+  var TN=["A sawyer's cottage","A trapper's hut","A turner's house","A cooper's shed","A forester's cottage","A tar-boiler's hut"];
+  for(var ti3=0;ti3<TN.length;ti3++){
+    var tdeg=(ti3*57+20)%360, tring=T3.ring+6.5+(ti3%2)*2.5, ta=tdeg*Math.PI/180;
+    var tx3=T3.x+Math.cos(ta)*tring, tz3=T3.z+Math.sin(ta)*tring;
+    if(Math.hypot(tx3-T3.x,tz3-T3.z)>T3.r-3)continue;
+    if(roadNearest(tx3,tz3).dist<ROADW*0.42)continue;
+    var tw=4.4+(ti3%3)*0.5, td=4.0+(ti3%2)*0.6, tclash=false;
+    for(var tq=0;tq<B.length;tq++){ var ob=B[tq]; if(ob.town!==2||!ob.w)continue;
+      if(Math.abs(tx3-ob.x)<(tw+ob.w)/2+2.2&&Math.abs(tz3-ob.z)<(td+ob.d)/2+2.2){tclash=true;break;} }
+    if(tclash)continue;
+    mkT("t_c"+ti3,TN[ti3],tdeg,tw,td,2.8,[172,148,114],[76,58,42],"cottage");
+    var lb=B[B.length-1]; lb.x=tx3; lb.z=tz3;
+    var _l3=Math.hypot(tx3-T3.x,tz3-T3.z)||1, _i3=Math.max(tw,td)/2+1.6;
+    lb.dx=tx3-((tx3-T3.x)/_l3)*_i3; lb.dz=tz3-((tz3-T3.z)/_l3)*_i3;
+  }
+  B.push({id:"t_market",n:"Tannholt Market",x:T3.x,z:T3.z,dx:T3.x,dz:T3.z+3.0,
+          kind:"market",w:0,d:0,h:0,town:2});
+  /* Veldkirk and Tannholt had nobody to sell to but the square. A few of
+     their houses are other men's trades now, and like Gild's they pay over
+     the market for what they work with -- grain and iron in Veldkirk, iron
+     and herbs in Tannholt. A house you already hold the deed to stays a house. */
+  [["v_h8","The Staple Ovens","baker"],["v_h0","Veldkirk Forge","smith"],
+   ["t_house1","The Charcoal Forge","smith"],["t_c5","The Herb-Wife's","apothecary"]].forEach(function(cv){
+    var bz=B.filter(function(x){return x.id===cv[0];})[0];
+    if(!bz||(G&&G.deeds&&G.deeds[cv[0]]))return;
+    bz.kind="biz"; bz.biz=cv[2]; bz.n=cv[1];
+  });
   for(var i=0;i<B.length;i++)if(B[i].kind==="rival"){
     var rr=G.rivals[B[i].ri];B[i].n=rr?("House "+rr.h):"A vacant estate";
   }
@@ -3238,6 +3465,7 @@ function buildTown(){
     var sb3=G.shops[si3]; if(!sb3.bId||sb3.bId==="shop")continue;
     var hb3=byIdB(sb3.bId); if(hb3){hb3.kind="shop2";hb3.tradeId=sb3.trade||G.trade;}
   }
+  roadFit();
 }
 function rebuildTownKeepHere(){
   var wasId=here?here.id:null;
@@ -3265,7 +3493,82 @@ function rebuildTownKeepHere(){
 
    It keeps to x=0 until it is well clear of the gate, and only then turns
    for Veldkirk. */
-var ROAD=[[0,-8],[0,-31],[0,-46],[0,-58],[0,-68],[-6,-78],[-14,-88],[-23,-99],[-32,-110],[-40,-121],[-46,-131]];
+/* The road ran almost straight from the gate to Veldkirk's square. It
+   winds now -- out through the gate, then back and forth along the valley
+   through the woods -- and comes in straight at each end so it meets both
+   gates square. */
+/* The road leaves the gate straight, runs straight out past the suburb,
+   winds through the woods in the middle and comes into Veldkirk straight.
+   The first cut wound from the gate itself, which swung it into the
+   suburb's houses and an estate's garden; it is now also fitted round
+   every building once the towns are laid out (roadFit), easing each bend
+   back toward the straight line until the verge clears the walls. */
+/* The first winding road swung ten paces either side of the valley the
+   land was shaped for, so it climbed the valley sides in cuttings and,
+   where two bends came close, the ground between them folded into
+   ridges -- worse than the straight road. It is the old road again, on the
+   old line down the valley, the only line the land is shaped for. The
+   woods either side stay. */
+var ROAD0=[[0,-8],[0,-31],[0,-46],[0,-58],[0,-68],[-6,-78],[-14,-88],[-23,-99],[-32,-110],[-40,-121],[-46,-131]];
+/* On from Veldkirk: across the square between the well and the south-east
+   stall, out between the Assize House and the cooper's, and then down
+   through the forest to Tannholt in long bends -- each bend far enough from
+   the next that the ground between them stays one slope. The height along
+   it is worked out continuously (roadHAt), so however it bends it cannot
+   stand up on end. */
+var ROAD_VELD_I=ROAD0.length-1;
+(function(){
+  ROAD0.push([-44.6,-135.0],[-42.4,-141.5],[-42.2,-146.5],[-33.7,-151.2],[-24,-158]);
+  var A=[-24,-158], Bq=[52,-207], dx=Bq[0]-A[0], dz=Bq[1]-A[1], L=Math.hypot(dx,dz), ux=dx/L, uz=dz/L, nx=-uz, nz=ux;
+  for(var k=1;k<8;k++){ var t=k/8, off=7*Math.sin(t*Math.PI*2*1.25)*Math.sin(Math.PI*t);
+    ROAD0.push([A[0]+ux*L*t+nx*off, A[1]+uz*L*t+nz*off]); }
+  ROAD0.push([52,-207],[56,-210]);
+})();
+var ROAD_WIND={n:0, off:null, pts:null};
+function roadWindInit(){
+  /* each stretch beyond the gate split in three; the inner points lean
+     gently one way and then the other */
+  var pts=[], off=[], k=0;
+  for(var i=0;i<ROAD0.length;i++){
+    pts.push({x:ROAD0[i][0],z:ROAD0[i][1],fixed:true,nx:0,nz:0}); off.push(0);
+    if(i===ROAD0.length-1)break;
+    if(i<4||i>=ROAD_VELD_I-1)continue;           /* straight through the gate, into Veldkirk, and on as laid */
+    var a=ROAD0[i], b=ROAD0[i+1], dx=b[0]-a[0], dz=b[1]-a[1], L=Math.hypot(dx,dz)||1;
+    for(var s2=1;s2<=2;s2++){ var t=s2/3; k++;
+      pts.push({x:a[0]+dx*t,z:a[1]+dz*t,fixed:false,nx:-dz/L,nz:dx/L});
+      off.push(0); }                  /* on the line itself: any lean put the paving on the valley side */
+  }
+  ROAD_WIND.pts=pts; ROAD_WIND.off=off; ROAD_WIND.n=pts.length;
+}
+function roadWindPoint(i){ var p=ROAD_WIND.pts[i], o=ROAD_WIND.off[i]||0; return [p.x+p.nx*o, p.z+p.nz*o]; }
+function roadBuild(){
+  if(!ROAD_WIND.off)roadWindInit();
+  var r=[]; for(var i=0;i<ROAD_WIND.n;i++)r.push(roadWindPoint(i));
+  ROAD=r; ROADCUM=null; ROADLEN=0; if(typeof ROADBB!=="undefined")ROADBB=null; if(typeof ROADH!=="undefined")ROADH=null;
+  return r;
+}
+function nearTown(x,z,m){ for(var i=0;i<TOWNS.length;i++)if(Math.hypot(x-TOWNS[i].x,z-TOWNS[i].z)<TOWNS[i].r+m)return true; return false; }
+function roadClash(x,z,m){
+  for(var i=0;i<B.length;i++){ var b=B[i]; if(!b.w||!b.d||b.kind==="market")continue;
+    if(Math.abs(x-b.x)<b.w/2+m&&Math.abs(z-b.z)<b.d/2+m)return true; }
+  return false;
+}
+function roadFit(){
+  if(!ROAD_WIND.off)roadWindInit();
+  var m=((typeof STREETW!=="undefined")?STREETW:3)+3.2;      /* the verge, clear of any wall */
+  for(var it=0;it<8;it++){ var changed=false;
+    for(var i=1;i<ROAD_WIND.n;i++){
+      if(ROAD_WIND.pts[i].fixed)continue;
+      var p=roadWindPoint(i), q=roadWindPoint(Math.max(1,i-1));
+      var mx=(p[0]+q[0])/2, mz=(p[1]+q[1])/2;
+      if(roadClash(p[0],p[1],m)||roadClash(mx,mz,m)){ ROAD_WIND.off[i]*=0.5; if(Math.abs(ROAD_WIND.off[i])<0.4)ROAD_WIND.off[i]=0; changed=true; }
+    }
+    if(!changed)break;
+  }
+  roadBuild();
+}
+var ROAD=null;
+roadBuild();
 var ROADCUM=null,ROADLEN=0;
 function roadInit(){
   ROADCUM=[0];ROADLEN=0;
@@ -3292,10 +3595,17 @@ function roadAt(d){
   return {x:L[0],z:L[1],hx:(L[0]-K[0])/ll,hz:(L[1]-K[1])/ll};
 }
 /* nearest point on the road to a world position */
+var ROADBB=null;
 function roadNearest(x,z){
   if(!ROADCUM)roadInit();
+  if(!ROADBB){ ROADBB=[]; for(var q=1;q<ROAD.length;q++){ var p0=ROAD[q-1],p1=ROAD[q];
+    ROADBB.push([Math.min(p0[0],p1[0]),Math.max(p0[0],p1[0]),Math.min(p0[1],p1[1]),Math.max(p0[1],p1[1])]); } }
   var bd=1e9,bal=0;
   for(var i=1;i<ROAD.length;i++){
+    /* a bend whose box is already further off than the best so far cannot
+       be nearer: the winding road has four times the bends of the old one */
+    var bb=ROADBB[i-1], ox=x<bb[0]?bb[0]-x:(x>bb[1]?x-bb[1]:0), oz=z<bb[2]?bb[2]-z:(z>bb[3]?z-bb[3]:0);
+    if(ox*ox+oz*oz>=bd*bd)continue;
     var a=ROAD[i-1],b2=ROAD[i];
     var vx=b2[0]-a[0],vz=b2[1]-a[1],vv=vx*vx+vz*vz||1;
     var t=clamp(((x-a[0])*vx+(z-a[1])*vz)/vv,0,1);
@@ -3345,7 +3655,7 @@ function spawnTraveller(){
   /* a guard is a luxury — even a fat purse often travels without one */
   var guarded=Math.random()<T.guardOdds?1:0;
   var tv={
-    kind:k, n:T.n, along:southbound?0:ROADLEN, dir:southbound?1:-1,
+    kind:k, n:T.n, along:southbound?0:roadL1(), dir:southbound?1:-1,
     x:0,z:0, purse:rnd(T.purse[0],T.purse[1]), guarded:guarded,
     cart:T.cart, sp:T.cart===2?0.68:(0.9+Math.random()*0.45),
     c:T.c, skin:rnd(0,SKINCOLORS.length-1),
@@ -3379,7 +3689,7 @@ function stepRoad(dt){
   for(var i=G.road.length-1;i>=0;i--){
     var r=G.road[i];
     r.along+=r.dir*r.sp*dt*WALK_MULT;
-    if(r.along<=0||r.along>=ROADLEN){G.road.splice(i,1);continue;}
+    if(r.along<=0||r.along>=roadL1()){G.road.splice(i,1);continue;}
     var pt=roadAt(r.along);
     var nx=-pt.hz,nz=pt.hx;
     r.x=pt.x+nx*r.lane; r.z=pt.z+nz*r.lane;
@@ -4961,7 +5271,7 @@ function vendorsOpen(){return G.t>=VEND_OPEN&&G.t<VEND_SHUT;}
    keeps his stall at his back and stands at the open end of the counter,
    out from under the cloth, facing the square. */
 function vendorSeat(st){
-  var side=(st.x<0)?-1:1, i=STALLS.indexOf(st), was=BLOCK_IGNORE;
+  var TC=TOWNS[st.town||0], side=(st.x<TC.x)?-1:1, i=STALLS.indexOf(st), was=BLOCK_IGNORE;
   BLOCK_IGNORE=(i>=0)?("stall"+i):BLOCK_IGNORE;          /* his own stall is not in his way */
   var x=st.x+side*1.8, z=st.z+0.10;
   if(typeof blockedAt==="function"&&blockedAt(x,z,0.42)){
@@ -4974,19 +5284,32 @@ function vendorSeat(st){
 function syncVendors(){
   if(!G||!STALLS.length)return;
   if(!G.vendors)G.vendors=[];
+  /* a save from before Veldkirk had sellers numbers its sellers by the old
+     stall order: rather than send Gild's cloth-seller to a Veldkirk stall,
+     the sellers are simply taken on afresh */
+  for(var vq=0;vq<G.vendors.length;vq++){ var vv=G.vendors[vq], vs2=STALLS[vv.vendor];
+    if(!vs2||(vs2.town||0)!==(vv.town||0)){ G.vendors=[]; break; } }
   /* they live in the houses nearest the square — a stallholder who lived
      out in the suburb spent half the morning getting in */
-  var homes=B.filter(function(b){return b.kind==="town"&&(b.town||0)===0&&b.dx!==undefined;});
-  if(!homes.length)return;
-  homes.sort(function(a,b){return Math.hypot(a.x,a.z)-Math.hypot(b.x,b.z);});
+  /* Veldkirk's four stalls stood empty: only Gild's six had anyone behind
+     them. Each stall now has a seller from its own town, living in the
+     houses nearest that town's square. */
+  var homesBy=TOWNS.map(function(_T,t){
+    var T=TOWNS[t], hs=B.filter(function(b){return (b.kind==="town"||(t===1&&b.kind==="cottage"))&&(b.town||0)===t&&b.dx!==undefined;});
+    hs.sort(function(a,b){return Math.hypot(a.x-T.x,a.z-T.z)-Math.hypot(b.x-T.x,b.z-T.z);});
+    return hs; });
+  if(!homesBy[0].length)return;
   var CLOTH=[[96,74,58],[70,84,96],[104,92,60],[84,70,88],[110,84,70],[64,78,70]];
   while(G.vendors.length<STALLS.length){
-    var i=G.vendors.length, st=STALLS[i], h=homes[i%homes.length], seat=vendorSeat(st);
+    var i=G.vendors.length, st=STALLS[i], stT=st.town||0;
+    var hs2=homesBy[stT].length?homesBy[stT]:homesBy[0];
+    var nIn=0; for(var q=0;q<i;q++)if((STALLS[q].town||0)===stT)nIn++;
+    var h=hs2[nIn%hs2.length], seat=vendorSeat(st);
     var open=vendorsOpen();
     G.vendors.push({uid:npcUid(),vendor:i,home:h.id,state:open?"at":"home",
       x:open?seat[0]:h.dx, z:open?seat[1]:h.dz, tx:seat[0], tz:seat[1], hx:0, hz:1,
       c:CLOTH[i%CLOTH.length], garb:"apron", gender:(i%2)?1:0, skin:rnd(0,SKINCOLORS.length-1),
-      sp:0.9, walkT:0, gaitAmp:0, pose:0, leg:null, town:0});
+      sp:0.9, walkT:0, gaitAmp:0, pose:0, leg:null, town:stT});
   }
   while(G.vendors.length>STALLS.length)G.vendors.pop();
 }
@@ -5370,11 +5693,15 @@ function releaseIdle(m){
 function idleLength(kind){
   /* These were too short to catch. A conversation in the street is not
      thirty seconds; a man on a bench sits there for the afternoon. */
-  if(kind==="talk")return 1.2+Math.random()*2.6;
-  if(kind==="stall")return 0.8+Math.random()*1.8;
-  if(kind==="well")return 0.6+Math.random()*1.4;
-  if(kind==="seat")return 2.2+Math.random()*4.5;
-  return 2.6+Math.random()*5.0;                 /* dice go on */
+  /* ...and then the hour got longer and everyone walked faster, so these
+     game-hours became minutes of real time while new people kept arriving:
+     by eight in the morning nearly half the square was standing still,
+     some of them for three game hours at a stall. A visit is a visit. */
+  if(kind==="talk")return 0.5+Math.random()*1.0;
+  if(kind==="stall")return 0.25+Math.random()*0.6;
+  if(kind==="well")return 0.2+Math.random()*0.4;
+  if(kind==="seat")return 1.0+Math.random()*1.6;
+  return 0.6+Math.random()*0.8;                 /* dice go on, but not all morning */
 }
 /* a knot of two to four, all facing the middle of it */
 function tryTalk(m){
@@ -5437,8 +5764,8 @@ function tryIdle(m){
      within reach — which is why so few of them ever stopped. People also
      just stand: waiting, watching, getting their breath. Facing roughly the
      way they came. */
-  if(r<0.94){
-    m.idle={kind:"stand",until:G.day*DAYH+G.t+(1.2+Math.random()*2.6)};
+  if(r<0.45){                                   /* most people have somewhere to be */
+    m.idle={kind:"stand",until:G.day*DAYH+G.t+(0.2+Math.random()*0.6)};
     m.pose=0; m.gaitAmp=0; m.leg=null;
     return true;
   }
@@ -5474,7 +5801,7 @@ function idleDone(){
    the towns, a room); inside a town nobody walks without a route. */
 /* routes are laid a little wider than the walker (NAV_MARGIN) so that the
    straight run between two corners never grazes what it is going round */
-var NAV_MARGIN=0.28;
+var NAV_MARGIN=0.28, NAV_OFFROAD=2.6;
 var NAV=null, NAV_CELL=0.5, NAV_PLAN_BUDGET=2, NAV_PLANS_LEFT=2, NAV_CACHE=new Map(), NAV_CACHE_MAX=600, NAV_STATS={plans:0,hits:0,fails:0};
 function navPadOf(m){ return (m&&m.patrol!==undefined)?GUARD_PAD:0.48; }
 function navBuild(){
@@ -5487,7 +5814,25 @@ function navBuild(){
       for(var k=0;k<N;k++){ var cx=x0+(k%W)*NAV_CELL, cz=z0+Math.floor(k/W)*NAV_CELL; if(blockedAt(cx,cz,pad+NAV_MARGIN))bl[k]=1; }
       BLOCK_IGNORE=was; BLOCK_SOFT=wasS;
       layers[pad]=bl; });
-    grids.push({town:ti,x0:x0,z0:z0,W:W,H:H,N:N,layers:layers,
+    /* where the paving is: a route costs more over grass than along a street
+       or across the square, so people keep to the ways the town was built
+       with and only cut a corner of grass when it saves them a great deal */
+    var road=new Uint8Array(N);
+    if(ti===0&&typeof SEDGES!=="undefined"){
+      /* each street painted onto the grid along its own length (asking every
+         cell about every street took two seconds) */
+      var RW=STREETW+0.5;
+      for(var se=0;se<SEDGES.length;se++){ var A=SNODES[SEDGES[se][0]], Bn=SNODES[SEDGES[se][1]];
+        var ex=Bn.x-A.x, ez=Bn.z-A.z, L2=ex*ex+ez*ez;
+        var cx0=Math.max(0,Math.floor((Math.min(A.x,Bn.x)-RW-x0)/NAV_CELL)), cx1=Math.min(W-1,Math.ceil((Math.max(A.x,Bn.x)+RW-x0)/NAV_CELL));
+        var cz0=Math.max(0,Math.floor((Math.min(A.z,Bn.z)-RW-z0)/NAV_CELL)), cz1=Math.min(H-1,Math.ceil((Math.max(A.z,Bn.z)+RW-z0)/NAV_CELL));
+        for(var cz=cz0;cz<=cz1;cz++)for(var cx=cx0;cx<=cx1;cx++){ var px=x0+cx*NAV_CELL, pz=z0+cz*NAV_CELL;
+          var tt=L2?((px-A.x)*ex+(pz-A.z)*ez)/L2:0; tt=tt<0?0:(tt>1?1:tt);
+          if(Math.hypot(px-(A.x+ex*tt),pz-(A.z+ez*tt))<RW)road[cz*W+cx]=1; } }
+      for(var sq=0;sq<N;sq++){ var qx=x0+(sq%W)*NAV_CELL, qz=z0+Math.floor(sq/W)*NAV_CELL; if(Math.abs(qx)<11.5&&Math.abs(qz)<11.5)road[sq]=1; }
+    }
+    else road.fill(1);
+    grids.push({town:ti,x0:x0,z0:z0,W:W,H:H,N:N,layers:layers,road:road,
       g:new Float32Array(N), from:new Int32Array(N), stamp:new Uint32Array(N), closed:new Uint32Array(N), sid:0,
       heap:new Int32Array(N), hk:new Float32Array(N)});
   }
@@ -5529,10 +5874,10 @@ function navFree(g,bl,k,rad){
   return best;
 }
 /* can a walker see from cell a to cell b without crossing a blocked cell */
-function navLOS(g,bl,a,b){
+function navLOS(g,bl,a,b,road){
   var ax=a%g.W, az=Math.floor(a/g.W), bx=b%g.W, bz=Math.floor(b/g.W);
   var dx=bx-ax, dz=bz-az, n=Math.max(Math.abs(dx),Math.abs(dz))*3;
-  for(var i=1;i<n;i++){ var t=i/n, x=Math.round(ax+dx*t), z=Math.round(az+dz*t); if(bl[z*g.W+x])return false; }
+  for(var i=1;i<n;i++){ var t=i/n, x=Math.round(ax+dx*t), z=Math.round(az+dz*t), k=z*g.W+x; if(bl[k])return false; if(road&&!road[k])return false; }
   return true;
 }
 function navPlan(g,pad,sx,sz,ex,ez){
@@ -5562,7 +5907,7 @@ function navPlan(g,pad,sx,sz,ex,ez){
       if(nx<0||nz<0||nx>=W||nz>=g.H)continue;
       var nk=nz*W+nx; if(bl[nk]||CL[nk]===sid)continue;
       if(ddx&&ddz&&(bl[cz*W+nx]||bl[nz*W+cx]))continue;
-      var ng=gc+((ddx&&ddz)?1.4142:1);
+      var ng=gc+((ddx&&ddz)?1.4142:1)*(g.road[nk]?1:NAV_OFFROAD);
       if(ST[nk]!==sid||ng<G2[nk]){ ST[nk]=sid; G2[nk]=ng; F[nk]=cur; push(nk,ng+hh(nk)); } }
   }
   NAV_STATS.plans++;
@@ -5571,7 +5916,10 @@ function navPlan(g,pad,sx,sz,ex,ez){
   cells.reverse();
   /* straightened: from each corner, as far along as he can see */
   var pts=[], i=0;
-  while(i<cells.length-1){ var j=cells.length-1; while(j>i+1&&!navLOS(g,bl,cells[i],cells[j]))j--; pts.push(cells[j]); i=j; }
+  while(i<cells.length-1){ var j=cells.length-1;
+    /* a straight run between two points on the street must stay on it */
+    while(j>i+1&&!navLOS(g,bl,cells[i],cells[j],(g.road[cells[i]]&&g.road[cells[j]])?g.road:null))j--;
+    pts.push(cells[j]); i=j; }
   var out=pts.map(function(c){ return [g.x0+(c%W)*NAV_CELL, g.z0+Math.floor(c/W)*NAV_CELL]; });
   NAV_CACHE.set(ck,out); if(NAV_CACHE.size>NAV_CACHE_MAX)NAV_CACHE.delete(NAV_CACHE.keys().next().value);
   return out.slice();
@@ -5782,7 +6130,7 @@ function seedNpcs(){
     /* Quality over crowd, on his instruction. A hundred and twenty people
        who are nearly all properly built beats two hundred where most are
        four tubes seen from behind. */
-    var count=ti===0?78:42;
+    var count=[78,42,24][ti]||20;                /* Tannholt is a village in the woods */
     for(var i=0;i<count;i++){
       var b=pick(pool);
       var isFem=Math.random()<0.35;
@@ -5793,7 +6141,7 @@ function seedNpcs(){
         var cx3=T.x+(Math.random()-.5)*spread, cz3=T.z+(Math.random()-.5)*spread;
         if(!blockedAt(cx3,cz3)){sx3=cx3;sz3=cz3;break;}
       }
-      if(!G.pop0)G.pop0=[0,0];
+      if(!G.pop0)G.pop0=[0,0,0];
       G.pop0[ti]=(G.pop0[ti]||0)+1;
       G.npcs.push({uid:npcUid(),x:sx3,z:sz3,tx:b.dx,tz:b.dz,
         town:ti,
@@ -5866,10 +6214,26 @@ var ROADBEAT=(function(){
   for(var i=ROADPTS.length-2;i>0;i--)r.push(ROADPTS[i]);
   return r;
 })();
+var WATCH_GILD=7, WATCH_VELD=3, WATCH_TANN=2;
+/* a save from before the watch grew: bring it up to strength */
+function topUpWatch(){
+  if(!G||!G.guards)return;
+  for(var t=0;t<TOWNS.length;t++){
+    var want=[WATCH_GILD,WATCH_VELD,WATCH_TANN][t]||2;
+    var have=G.guards.filter(function(g){return (g.town||0)===t&&g.patrol===true;}).length;
+    for(var k=have;k<want;k++){ var b=pickIn(t);
+      var gp=freeSpotNear(b.dx,b.dz,3)||[TOWNS[t].x,TOWNS[t].z];
+      G.guards.push({x:gp[0],z:gp[1],town:t,sp:0.95+Math.random()*0.2,c:[128,128,140],skin:0,walkT:0,gaitAmp:0,hx:0,hz:1,gender:0,patrol:true}); }
+  }
+}
 function seedGuards(){
   G.guards=[];
   /* Gild's watch */
-  for(var i=0;i<5;i++){
+  /* Five in Gild, three of them walking the same road circuit: the watch
+     was two men wandering and a procession. There are seven now -- the
+     three on the road beat and four who walk the town, each to a
+     different quarter in turn. */
+  for(var i=0;i<WATCH_GILD;i++){
     var b=pickIn(0);
     var gp=blockedAt(b.dx,b.dz)?{x:TOWNS[0].x,z:TOWNS[0].z}:{x:b.dx,z:b.dz};
     G.guards.push({x:gp.x+(Math.random()-.5)*2,z:gp.z+(Math.random()-.5)*2,town:0,
@@ -5909,7 +6273,12 @@ function seedGuards(){
     g.tx=undefined;
   }
   /* Veldkirk keeps a thinner watch — two men and no road beat */
-  for(var v=0;v<2;v++){
+  for(var tw2=0;tw2<WATCH_TANN;tw2++){
+    var tb2=pickIn(2); var tp2=blockedAt(tb2.dx,tb2.dz)?{x:TOWNS[2].x,z:TOWNS[2].z}:{x:tb2.dx,z:tb2.dz};
+    G.guards.push({x:tp2.x+(Math.random()-.5)*2,z:tp2.z+(Math.random()-.5)*2,town:2,
+      sp:0.95,c:[128,128,140],skin:0,walkT:0,gaitAmp:0,hx:0,hz:1,gender:0,patrol:true});
+  }
+  for(var v=0;v<WATCH_VELD;v++){
     var vb=pickIn(1);
     var vp=blockedAt(vb.dx,vb.dz)?{x:TOWNS[1].x,z:TOWNS[1].z}:{x:vb.dx,z:vb.dz};
     G.guards.push({x:vp.x+(Math.random()-.5)*2,z:vp.z+(Math.random()-.5)*2,town:1,
@@ -6764,9 +7133,9 @@ function stallG(x,z,col,seed){
     }
   }
 }
-function treeG(x,z,h){
+function treeG(x,z,h,scenery){
   if(!treeOK(x,z))return;
-  prop(x,z,0.55,0.55,"tree");
+  if(!scenery)prop(x,z,0.55,0.55,"tree");
   var _cy=CURY; CURY=standH(x,z);
   var fol=SEASONCOL.tree, bark=[86,64,40];
   var sd=((Math.round(x*7.3)*73856093)^(Math.round(z*7.3)*19349663))>>>0;
@@ -8803,18 +9172,90 @@ function buildGeo0(){
   /* Veldkirk's square: a well and two stalls, poorer than Gild's */
   CURY=TOWNS[1].padY;
   /* Veldkirk trades in earnest — the road carriers unload here */
-  var vstall=[[-5.4,2.8,[132,96,54]],[5.4,-2.8,[86,104,120]],[-5.8,-4.4,[104,120,86]],
-              [5.8,4.4,[140,108,72]],[0,-6.2,[118,96,116]],[0,6.2,[96,110,128]]];
+  /* Six little roofed crates packed round the well, two carts and (after
+     the first facelift) benches and a cross as well: a square too full to
+     cross, and not one thing in it that looked like a market stall. It has
+     four proper stalls now -- posts, a striped cloth over, a counter with
+     the goods on it -- set back to the square's edges, and open flagstones
+     between them and the well. */
+  var vstall=[[-6.6,-5.4,[168,68,58]],[6.6,-5.4,[58,92,140]],[-6.6,5.4,[112,126,56]],[6.6,5.4,[150,110,54]]];
   for(var vs=0;vs<vstall.length;vs++){
-    var V3=vstall[vs];
-    boxG(V2.x+V3[0],V2.z+V3[1],1.9,1.4,0,.9,[150,134,108],1,TILE.PLANK);
-    gableG(V2.x+V3[0],V2.z+V3[1],2.5,2.0,.9,.55,V3[2]);
+    var V3=vstall[vs], sx=V2.x+V3[0], sz=V2.z+V3[1], cl=V3[2], dk=[cl[0]*0.62|0,cl[1]*0.62|0,cl[2]*0.62|0];
+    /* four posts */
+    for(var pq=0;pq<4;pq++){ var px=sx+((pq&1)?1.05:-1.05), pz=sz+((pq&2)?0.75:-0.75);
+      boxG(px,pz,0.14,0.14,0,2.15,[98,74,48],0,TILE.PLANK); }
+    /* the counter, facing the well */
+    var fz=(V3[1]<0)?0.55:-0.55;
+    boxG(sx,sz+fz,2.1,0.55,0,0.92,[128,96,62],0,TILE.PLANK);
+    /* goods on it */
+    for(var gq=0;gq<4;gq++)boxG(sx-0.72+gq*0.48,sz+fz,0.34,0.3,0.92,0.92+0.12+(gq%2)*0.08,[[196,150,80],[150,84,60],[200,190,160],[120,140,70]][(gq+vs)%4]);
+    /* the cloth: two tilted halves in the stall's colour, a darker stripe */
+    boxG(sx,sz,2.4,1.8,2.15,2.24,cl);
+    boxG(sx,sz,2.4,0.3,2.24,2.30,dk);
+    STALLS.push({x:sx,z:sz,col:cl,kind:vs%3,town:1});
+    prop(sx,sz,2.3,1.7,"stall"+(STALLS.length-1));
   }
-  cartG(V2.x-8.4,V2.z+0.6);
-  cartG(V2.x+8.4,V2.z-0.6);
   CURY=0;
   lampG(V2.x-8.8,V2.z-7.4);
   lampG(V2.x+8.8,V2.z+7.4);
+  /* ── Veldkirk, done up ─────────────────────────────────────────────
+     It was a well, six stalls and two lamps on bare ground. It has a
+     square now: flagstones, a stone market cross in the middle, lamps at
+     all four corners, benches, limes round the edge, flower tubs by the
+     doors of the hall and the church, and a timber gate where the road
+     comes in. Still the smaller, rougher town -- but a town. */
+  (function(){
+    var X=V2.x, Z=V2.z; CURY=TOWNS[1].padY;
+    /* the flagstones: a lighter square with a kerb, laid just proud of the ground */
+    boxG(X,Z,19.5,19.5,0.00,0.05,[150,142,128],0,TILE.STONE);
+    boxG(X,Z-9.9,20,0.35,0,0.14,[118,112,102],0,TILE.STONE); boxG(X,Z+9.9,20,0.35,0,0.14,[118,112,102],0,TILE.STONE);
+    boxG(X-9.9,Z,0.35,20,0,0.14,[118,112,102],0,TILE.STONE); boxG(X+9.9,Z,0.35,20,0,0.14,[118,112,102],0,TILE.STONE);
+    /* (no cross and no benches: the square is for walking across) */
+    CURY=0;
+    /* limes round the square */
+    for(var li=0;li<8;li++){ var la=(li+0.5)/8*6.2832, lr=12.8;
+      var lx=X+Math.cos(la)*lr, lz=Z+Math.sin(la)*lr;
+      if(roadNearest(lx,lz).dist<4.5)continue;
+      var clash=false; for(var bq=0;bq<B.length;bq++){ var ob=B[bq]; if(ob.town===1&&ob.w&&Math.abs(lx-ob.x)<ob.w/2+1.6&&Math.abs(lz-ob.z)<ob.d/2+1.6){clash=true;break;} }
+      if(!clash)treeG(lx,lz,3.4+(li%3)*0.5); }
+    /* flower tubs by the hall and the church doors */
+    B.forEach(function(ob){ if(ob.town!==1||(ob.kind!=="hall"&&ob.kind!=="church"&&ob.kind!=="tavern"))return;
+      var _c=CURY; CURY=standH(ob.dx,ob.dz);
+      var px=-(ob.dz-ob.z), pz=(ob.dx-ob.x), pl=Math.hypot(px,pz)||1; px/=pl; pz/=pl;
+      for(var sd=-1;sd<=1;sd+=2){ var fx=ob.dx+px*1.5*sd, fz=ob.dz+pz*1.5*sd;
+        boxG(fx,fz,0.6,0.6,0,0.42,[112,84,56],0,TILE.PLANK);
+        boxG(fx,fz,0.5,0.5,0.42,0.62,[[176,70,64],[196,168,72],[150,96,160]][(sd+1)/2+(ob.kind==="church"?1:0)]); }
+      CURY=_c; });
+    /* ── Tannholt's square: flagstones, the well, three stalls ── */
+    (function(){
+      var T3=TOWNS[2], X3=T3.x, Z3=T3.z; CURY=T3.padY;
+      boxG(X3,Z3,15.5,15.5,0.00,0.05,[140,132,116],0,TILE.STONE);
+      CURY=0;
+      wellG(X3,Z3);
+      var ts=[[-5.4,-4.6,[124,92,56]],[5.4,-4.6,[92,110,72]],[5.4,4.6,[140,104,64]]];
+      for(var q3=0;q3<ts.length;q3++){ var sx=X3+ts[q3][0], sz=Z3+ts[q3][1], cl=ts[q3][2], dk=[cl[0]*0.62|0,cl[1]*0.62|0,cl[2]*0.62|0];
+        CURY=T3.padY;
+        for(var pq=0;pq<4;pq++)boxG(sx+((pq&1)?1.05:-1.05),sz+((pq&2)?0.75:-0.75),0.14,0.14,0,2.15,[98,74,48],0,TILE.PLANK);
+        var fz=(ts[q3][1]<0)?0.55:-0.55;
+        boxG(sx,sz+fz,2.1,0.55,0,0.92,[128,96,62],0,TILE.PLANK);
+        for(var gq=0;gq<4;gq++)boxG(sx-0.72+gq*0.48,sz+fz,0.34,0.3,0.92,1.04+(gq%2)*0.08,[[150,110,70],[112,90,60],[190,176,140],[96,120,64]][(gq+q3)%4]);
+        boxG(sx,sz,2.4,1.8,2.15,2.24,cl); boxG(sx,sz,2.4,0.3,2.24,2.30,dk);
+        CURY=0;
+        STALLS.push({x:sx,z:sz,col:cl,kind:q3%3,town:2});
+        prop(sx,sz,2.3,1.7,"stall"+(STALLS.length-1)); }
+      lampG(X3-7.4,Z3+6.8); lampG(X3+7.4,Z3-6.8);
+      /* the forest closes round the town on every side the road does not come from */
+      for(var fr=0;fr<3;fr++)for(var fa=0;fa<40;fa++){
+        var ang=(fa/40)*6.2832+fr*0.07, rad=T3.r+5+fr*6.5+((fa*7+fr*3)%5)*0.8;
+        var fx=X3+Math.cos(ang)*rad, fz2=Z3+Math.sin(ang)*rad;
+        if(roadNearest(fx,fz2).dist<5.5)continue;
+        if(fx>135||fz2<-255)continue;
+        treeG(fx,fz2,3.0+((fa*5+fr)%4)*0.6,true);
+      }
+    })();
+    /* (the timber gate is gone: boxes cannot turn, so on a road that comes
+       in at an angle its lintel read as a plank or a roof across the way) */
+  })();
 
   /* the road between: milestones, wayside trees and a shrine, so the walk
      has something to measure itself against */
@@ -8840,20 +9281,58 @@ function buildGeo0(){
     else treeG(rx2,rz2,2.6+((i*7)%5)*0.42);
   }
   /* a few boulders right at the verge, where a cart would have to steer round */
+  /* The woods. The road runs through forest now, two and three trees deep
+     either side and thicker further back, broken here and there by a
+     clearing -- laid by a fixed pattern so it is the same wood every visit.
+     They are scenery: nobody walks off the road into them. */
+  (function(){
+    var step=3.4, k=0;
+    for(var d=0;d<ROADLEN;d+=step){ k++;
+      var rp=roadAt(d), rnx=-rp.hz, rnz=rp.hx;
+      if(nearTown(rp.x,rp.z,8))continue;
+      var clearing=(Math.sin(d*0.045)+Math.sin(d*0.11+1.3))>1.35;      /* now and then an opening */
+      for(var side=-1;side<=1;side+=2)for(var row=0;row<4;row++){
+        if(clearing&&row<2)continue;
+        var h=((k*7+row*13+(side>0?5:0))%17)/17, h2=((k*11+row*5+(side>0?3:0))%13)/13;
+        var off=6.2+row*4.6+h*2.4, along=(h2-0.5)*2.6;
+        var tx=rp.x+rnx*off*side+rp.hx*along, tz=rp.z+rnz*off*side+rp.hz*along;
+        if(roadNearest(tx,tz).dist<5.2)continue;                      /* keeps off the road where it bends back */
+        if(nearTown(tx,tz,4))continue;
+        /* not through the houses and estates that stand along the road */
+        var inB=false; for(var bq=0;bq<B.length;bq++){ var ob=B[bq]; if(!ob.w||!ob.d)continue;
+          if(Math.abs(tx-ob.x)<ob.w/2+2.2&&Math.abs(tz-ob.z)<ob.d/2+2.2){inB=true;break;} }
+        if(inB)continue;
+        treeG(tx,tz,2.8+h*2.4+(row>1?0.8:0),true);
+      }
+    }
+  })();
   for(i=0;i<5;i++){
     var vd=ROADLEN*(0.18+i*0.16), vp=roadAt(vd);
     var vnx=-vp.hz,vnz=vp.hx, vs=(i%2?1:-1);
-    rockG(vp.x+vnx*6.2*vs,vp.z+vnz*6.2*vs,0.8+((i*3)%3)*0.25,i+7);
+    if(roadNearest(vp.x+vnx*6.2*vs,vp.z+vnz*6.2*vs).dist>4.8)rockG(vp.x+vnx*6.2*vs,vp.z+vnz*6.2*vs,0.8+((i*3)%3)*0.25,i+7);
   }
   /* a pond in the crook of the bend, with a stand of trees behind it */
-  var pp=roadAt(ROADLEN*0.62), pnx=-pp.hz, pnz=pp.hx;
-  var pcx=pp.x+pnx*17, pcz=pp.z+pnz*17;
+  /* laid seventeen paces off the road at a fixed point, it landed on the
+     road itself once the road began to bend back on itself, or in a
+     garden: it goes wherever along that stretch is clear of both */
+  var pcx=null, pcz=null;
+  for(var pf=0;pf<14&&pcx===null;pf++){
+    var pfr=0.62+((pf%7)-3)*0.04, psd=(pf<7)?1:-1;
+    var pp=roadAt(ROADLEN*pfr), pnx=-pp.hz, pnz=pp.hx;
+    var qx=pp.x+pnx*17*psd, qz=pp.z+pnz*17*psd;
+    if(roadNearest(qx,qz).dist<13)continue;
+    if(roadClash(qx,qz,8))continue;
+    if(Math.hypot(qx-TOWNS[0].x,qz-TOWNS[0].z)<TOWNS[0].r+14||Math.hypot(qx-TOWNS[1].x,qz-TOWNS[1].z)<TOWNS[1].r+8)continue;
+    pcx=qx; pcz=qz;
+  }
+  if(pcx===null){ var pp2=roadAt(ROADLEN*0.62); pcx=pp2.x-pp2.hz*30; pcz=pp2.z+pp2.hx*30; }
   pondG(pcx,pcz,7.5,5.2);
   treeG(pcx-9,pcz-3,3.6); treeG(pcx+8.5,pcz+4,3.2); treeG(pcx+2,pcz-8,2.9);
   rockG(pcx-8.5,pcz+5.5,1.3,3);
   /* a wayside shrine at the halfway point, set back off the verge */
   var shp=roadAt(ROADLEN*0.5), snx=-shp.hz, snz=shp.hx;
   var shx=shp.x-snx*5.4, shz=shp.z-snz*5.4;
+  if(roadNearest(shx,shz).dist<4.4){ shx=shp.x+snx*5.4; shz=shp.z+snz*5.4; }
   boxG(shx,shz,1.6,1.6,0,1.9,[196,190,172],0,TILE.STONE);
   gableG(shx,shz,2.1,2.1,1.9,1.1,[96,102,110]);
   boxG(shx,shz,.22,.22,1.9,2.9,[120,96,60]);
@@ -9765,7 +10244,9 @@ function initGL(canvas){
        canvas.getContext("experimental-webgl",{antialias:true,alpha:false,depth:true});
   }catch(e){gl=null;}
   if(!gl)return false;
-  glProg=glProgram(VSRC,FSRC);
+  GPUFIG.why=gpuFigSupport(); GPUFIG.ok=!GPUFIG.why;
+  glProg=GPUFIG.ok?glProgram(VSRC_SKIN,FSRC):null;
+  if(!glProg){ if(GPUFIG.ok)GPUFIG.why="skinning shader would not compile"; GPUFIG.ok=false; glProg=glProgram(VSRC,FSRC); }
   glSky=glProgram(SKY_V,SKY_F);
   if(!glProg||!glSky){gl=null;return false;}
   glTex=glMakeTex();
@@ -9784,6 +10265,10 @@ function initGL(canvas){
     uTorches:gl.getUniformLocation(glProg,"uTorches"),uTorchCount:gl.getUniformLocation(glProg,"uTorchCount"),
     skyP:gl.getAttribLocation(glSky,"aP"),skyC:gl.getAttribLocation(glSky,"aC")
   };
+  if(GPUFIG.ok){ GLLOC.skin=gpuFigLocs(glProg,false); gl.useProgram(glProg); gl.uniform1f(GLLOC.skin.uSkin,0);
+    var dmy=gpuFigDummy(); gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D,dmy); gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D,dmy); gl.activeTexture(gl.TEXTURE0);
+    gl.uniform1i(GLLOC.skin.uPosT,2); gl.uniform1i(GLLOC.skin.uNrmT,3); }
+  trace("FIGURES: "+(GPUFIG.ok?"drawn by the graphics chip":"built in code ("+GPUFIG.why+")"));
   glStatic.o=glMakeBatch();glStatic.b=glMakeBatch();
   glDyn.o=glMakeBatch();glDyn.b=glMakeBatch();glDyn.k=glMakeBatch();
   glSkyBuf={p:gl.createBuffer(),c:gl.createBuffer()};
@@ -9795,12 +10280,190 @@ function initGL(canvas){
   GLOK=true;GLDIRTY=true;
   return true;
 }
+/* ══ LOADED FIGURES DRAWN ON THE GRAPHICS CHIP ════════════════════════════
+   Every loaded figure used to be rebuilt in JavaScript every frame: each of
+   its triangles placed, turned, dyed and copied into the frame's buffer --
+   well over half of all the geometry the frame uploaded, for bodies whose
+   shape comes from a handful of cached poses. Now each model is uploaded
+   once, each cached pose is uploaded once (as two small float textures),
+   and a figure costs one draw call: where it stands, which way it faces,
+   how tall and broad, how fat, and the colours of its clothes, all as a
+   dozen numbers. The graphics chip does the rest. The clothes, hats and
+   hair on top are still built as before. Anything the chip cannot do --
+   no float textures, a shader that will not compile, Ink turned on --
+   and the old way is used, unchanged. */
+var GPUFIG={want:true, ok:false, why:"", queue:[], dummy:null};
+var VSRC_SKIN=
+"attribute vec3 aPos;attribute vec3 aNrm;attribute vec3 aCol;attribute vec4 aMat;attribute float aAO;"+
+"attribute float aSrc;attribute vec3 aBase;attribute vec3 aRaw;attribute vec2 aBind;"+
+"uniform mat4 uVP;uniform float uSkin;uniform sampler2D uPosT;uniform sampler2D uNrmT;uniform vec2 uTexSz;"+
+"uniform vec3 uXf;uniform vec2 uHd;uniform vec3 uScl;uniform vec3 uCSkin;uniform vec3 uCHair;uniform vec3 uCUp;"+
+"uniform vec3 uCLo;uniform vec3 uCBt;uniform vec3 uCHem;uniform vec3 uFlg;"+
+"varying vec3 vN;varying vec3 vC;varying vec3 vW;varying vec4 vM;varying float vAO;"+
+"vec2 tuv(float i){float x=mod(i,uTexSz.x);float y=floor(i/uTexSz.x);return vec2((x+0.5)/uTexSz.x,(y+0.5)/uTexSz.y);}"+
+"void main(){"+
+" if(uSkin<0.5){vN=aNrm;vC=aCol;vW=aPos;vM=aMat;vAO=aAO;gl_Position=uVP*vec4(aPos,1.0);return;}"+
+" vec2 t=tuv(aSrc);vec3 p=texture2D(uPosT,t).xyz;vec3 n=texture2D(uNrmT,t).xyz;"+
+" p+=n*aBase.z*uScl.z;p.x*=uScl.x;p.z*=uScl.x;p.y*=uScl.y;"+
+" float rx=uHd.y;float rz=-uHd.x;"+
+" vec3 w=vec3(uXf.x+rx*p.x+uHd.x*p.z,uXf.y+p.y,uXf.z+rz*p.x+uHd.y*p.z);"+
+" vec3 wn=vec3(rx*n.x+uHd.x*n.z,n.y,rz*n.x+uHd.y*n.z);"+
+" float k=aBase.x;vec3 tg=aRaw;"+
+" if(k>0.5&&k<1.5)tg=uCSkin;else if(k>1.5&&k<2.5)tg=uCHair;"+
+" else if(k>2.5&&k<3.5)tg=(uFlg.y>0.5&&aBind.y<uFlg.z)?uCHem:((uFlg.x>0.5&&aBind.x<0.0)?uCLo:uCUp);"+
+" else if(k>3.5&&k<4.5)tg=(uFlg.x>0.5&&aBind.x>0.0)?uCUp:uCLo;"+
+" else if(k>4.5&&k<5.5)tg=uCBt;"+
+" vC=(k>0.5)?min(tg*aBase.y,vec3(1.0)):aRaw;vN=wn;vW=w;vM=aMat;vAO=1.0;gl_Position=uVP*vec4(w,1.0);}";
+var SHADOW_V_SKIN=
+"attribute vec3 aPos;attribute float aSrc;attribute vec3 aBase;"+
+"uniform mat4 uVP;uniform float uSkin;uniform sampler2D uPosT;uniform sampler2D uNrmT;uniform vec2 uTexSz;"+
+"uniform vec3 uXf;uniform vec2 uHd;uniform vec3 uScl;"+
+"vec2 tuv(float i){float x=mod(i,uTexSz.x);float y=floor(i/uTexSz.x);return vec2((x+0.5)/uTexSz.x,(y+0.5)/uTexSz.y);}"+
+"void main(){ if(uSkin<0.5){gl_Position=uVP*vec4(aPos,1.0);return;}"+
+" vec2 t=tuv(aSrc);vec3 p=texture2D(uPosT,t).xyz;vec3 n=texture2D(uNrmT,t).xyz;"+
+" p+=n*aBase.z*uScl.z;p.x*=uScl.x;p.z*=uScl.x;p.y*=uScl.y;"+
+" float rx=uHd.y;float rz=-uHd.x;"+
+" gl_Position=uVP*vec4(uXf.x+rx*p.x+uHd.x*p.z,uXf.y+p.y,uXf.z+rz*p.x+uHd.y*p.z,1.0);}";
+function gpuFigSupport(){
+  try{
+    if(!gl.getExtension("OES_texture_float"))return "no float textures";
+    if((gl.getParameter(gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS)|0)<2)return "no vertex textures";
+    return "";
+  }catch(e){ return "no support: "+e.message; }
+}
+function gpuFigLocs(prog,shadow){
+  var L={};
+  ["aSrc","aBase","aRaw","aBind"].concat(shadow?[]:["aMat"]).forEach(function(n){ L[n]=gl.getAttribLocation(prog,n); });
+  ["uSkin","uPosT","uNrmT","uTexSz","uXf","uHd","uScl"].concat(shadow?[]:["uCSkin","uCHair","uCUp","uCLo","uCBt","uCHem","uFlg"]).forEach(function(n){ L[n]=gl.getUniformLocation(prog,n); });
+  return L;
+}
+function gpuFigDummy(){
+  if(GPUFIG.dummy)return GPUFIG.dummy;
+  var t=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,t);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.FLOAT,new Float32Array(4));
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+  GPUFIG.dummy=t; return t;
+}
+/* one model's triangles, laid out once: which cached vertex each corner
+   reads, which part of the body it is, its base shade, fat weight,
+   texture tile and texture position */
+function gpuMesh(ch){
+  if(ch._gpu)return ch._gpu;
+  var prim=ch.meshes[0][0], idx=prim.indices, tc=prim.triColor, vcl=prim.vertColor, tt=prim.triTile, BP=prim.pos, BN=prim.nrm;
+  var hu=glbHeadUVs(ch), faceCell=(ch._female?TILE.FACE_F:TILE.FACE_M), PK=null, FW=null;
+  try{ PK=glbParts(ch).kind; }catch(e){}
+  try{ FW=glbFatW(ch); }catch(e){}
+  var nt=(idx.length/3)|0, nvx=nt*3;
+  var aSrc=new Float32Array(nvx), aBase=new Float32Array(nvx*3), aRaw=new Float32Array(nvx*3), aMat=new Float32Array(nvx*4), aBind=new Float32Array(nvx*2);
+  function lum(r,g,b){ return 0.55+((r*0.299+g*0.587+b*0.114)/255)*0.75; }
+  for(var ti=0;ti<nt;ti++){
+    var a=idx[ti*3],b=idx[ti*3+1],c=idx[ti*3+2], cor=[a,b,c];
+    var part=PK?PK[ti]:0, tile=(tt?tt[ti]:TILE.CLOTH);
+    var isFace=false;
+    if(GLB_FACE_PAINT&&hu&&hu.on[a]&&hu.on[b]&&hu.on[c]){
+      var fz=(BN[a*3+2]+BN[b*3+2]+BN[c*3+2])/3;
+      if(fz>0.30){ var ua=hu.uv[a*2],ub=hu.uv[b*2],uc=hu.uv[c*2], va=hu.uv[a*2+1],vb=hu.uv[b*2+1],vc2=hu.uv[c*2+1];
+        if(ua>0.01&&ua<0.99&&ub>0.01&&ub<0.99&&uc>0.01&&uc<0.99&&Math.min(va,vb,vc2)>0.04)isFace=true; }
+    }
+    /* the body-locked texture frame, worked out once in the bind pose, the
+       same projection glBuild used per triangle */
+    var ax=BP[a*3],ay=BP[a*3+1],az=BP[a*3+2], bx=BP[b*3],by=BP[b*3+1],bz=BP[b*3+2], cx=BP[c*3],cy=BP[c*3+1],cz=BP[c*3+2];
+    var ux=bx-ax,uy=by-ay,uz=bz-az,wx=cx-ax,wy=cy-ay,wz=cz-az;
+    var fnx=uy*wz-uz*wy, fny=uz*wx-ux*wz, fnz=ux*wy-uy*wx, fl=Math.hypot(fnx,fny,fnz)||1; fnx/=fl; fny/=fl; fnz/=fl;
+    var mx=(ax+bx+cx)/3, my=(ay+by+cy)/3, mz=(az+bz+cz)/3, t1x,t1z;
+    if(Math.abs(fny)<0.9){t1x=-fnz;t1z=fnx;}else{t1x=1;t1z=0;}
+    var tl=Math.hypot(t1x,t1z)||1; t1x/=tl; t1z/=tl;
+    var t2x=fny*t1z, t2y=fnz*t1x-fnx*t1z, t2z=-fny*t1x;
+    var sc=(tile===TILE.CLOTH)?5.2:2.4;
+    for(var q=0;q<3;q++){ var v=cor[q], o=ti*3+q;
+      aSrc[o]=v;
+      var r,g,bb;
+      if(vcl){ r=vcl[v*3]; g=vcl[v*3+1]; bb=vcl[v*3+2]; } else { r=tc[ti*3]; g=tc[ti*3+1]; bb=tc[ti*3+2]; }
+      aBase[o*3]=part; aBase[o*3+1]=lum(r,g,bb); aBase[o*3+2]=FW?(FW[v]||0):0;
+      aRaw[o*3]=r/255; aRaw[o*3+1]=g/255; aRaw[o*3+2]=bb/255;
+      aBind[o*2]=ax; aBind[o*2+1]=ay;
+      if(isFace){ aMat[o*4]=1; aMat[o*4+1]=hu.uv[v*2]; aMat[o*4+2]=hu.uv[v*2+1]; aMat[o*4+3]=faceCell; }
+      else { var px=BP[v*3]-mx, py=BP[v*3+1]-my, pz=BP[v*3+2]-mz;
+        aMat[o*4]=1; aMat[o*4+1]=(px*t1x+pz*t1z)*sc+0.5; aMat[o*4+2]=(px*t2x+py*t2y+pz*t2z)*sc+0.5; aMat[o*4+3]=(tile<0?TILE.SKIN:tile); }
+    }
+  }
+  function buf(arr){ var b2=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,b2); gl.bufferData(gl.ARRAY_BUFFER,arr,gl.STATIC_DRAW); return b2; }
+  ch._gpu={n:nvx, nv:prim.nv, src:buf(aSrc), base:buf(aBase), raw:buf(aRaw), mat:buf(aMat), bind:buf(aBind)};
+  return ch._gpu;
+}
+/* a cached pose, uploaded once as two small float textures */
+function gpuPoseTex(posed,nv){
+  if(posed.__gt)return posed.__gt;
+  var W=64, H=Math.ceil(nv/W), P=new Float32Array(W*H*4), N=new Float32Array(W*H*4);
+  for(var i=0;i<nv;i++){ P[i*4]=posed.pos[i*3]; P[i*4+1]=posed.pos[i*3+1]; P[i*4+2]=posed.pos[i*3+2];
+    N[i*4]=posed.nrm[i*3]; N[i*4+1]=posed.nrm[i*3+1]; N[i*4+2]=posed.nrm[i*3+2]; }
+  function tex(d){ var t=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,t);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,W,H,0,gl.RGBA,gl.FLOAT,d);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE); return t; }
+  posed.__gt={p:tex(P), n:tex(N), w:W, h:H};
+  return posed.__gt;
+}
+function gpuFigActive(){ return GPUFIG.ok&&GPUFIG.want&&!INK; }
+/* what glbPlace would have worked out for this person, as a draw order */
+function gpuFigQueue(useCh,posed,x,z,gy,hx,hz,uid,build,dress){
+  var hl=Math.hypot(hx,hz)||1; hx/=hl; hz/=hl;
+  var LOOK=glbLook(uid), DUP=(dress&&dress.up)||LOOK.up, DLO=(dress&&dress.lo)||glbMatchLo(DUP,uid);
+  var DMI=!!(dress&&dress.mi), DHEM=dress&&dress.hem&&!dress.cote&&!dress.gown;
+  var HEMY=DHEM?glbHemY(useCh):-1e9, FD=(build||0)*GLB_FAT_MAX;
+  var skin=(dress&&dress.skin)||LOOK.skin, hair=(dress&&dress.hairCol)||LOOK.hair;
+  GPUFIG.queue.push({mesh:gpuMesh(useCh), tex:gpuPoseTex(posed,useCh.meshes[0][0].nv), x:x,z:z,gy:gy,hx:hx,hz:hz,
+    scl:[LOOK.girth,LOOK.tall,FD], skin:skin, hair:hair, up:DUP, lo:DLO, bt:LOOK.bt, hem:(DHEM||DUP), flg:[DMI?1:0,DHEM?1:0,HEMY]});
+}
+function gpuFigUniforms(L,f,full){
+  gl.uniform3f(L.uXf,f.x,f.gy,f.z); gl.uniform2f(L.uHd,f.hx,f.hz); gl.uniform3f(L.uScl,f.scl[0],f.scl[1],f.scl[2]);
+  gl.uniform2f(L.uTexSz,f.tex.w,f.tex.h);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D,f.tex.p); gl.uniform1i(L.uPosT,2);
+  gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D,f.tex.n); gl.uniform1i(L.uNrmT,3);
+  gl.activeTexture(gl.TEXTURE0);
+  if(full){ function c3(u,c){ gl.uniform3f(u,c[0]/255,c[1]/255,c[2]/255); }
+    c3(L.uCSkin,f.skin); c3(L.uCHair,f.hair); c3(L.uCUp,f.up); c3(L.uCLo,f.lo); c3(L.uCBt,f.bt); c3(L.uCHem,f.hem);
+    gl.uniform3f(L.uFlg,f.flg[0],f.flg[1],f.flg[2]); }
+}
+function gpuFigAttrs(L,m,full){
+  gl.bindBuffer(gl.ARRAY_BUFFER,m.src); gl.enableVertexAttribArray(L.aSrc); gl.vertexAttribPointer(L.aSrc,1,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,m.base); gl.enableVertexAttribArray(L.aBase); gl.vertexAttribPointer(L.aBase,3,gl.FLOAT,false,0,0);
+  if(full){
+    gl.bindBuffer(gl.ARRAY_BUFFER,m.raw); gl.enableVertexAttribArray(L.aRaw); gl.vertexAttribPointer(L.aRaw,3,gl.FLOAT,false,0,0);
+    gl.bindBuffer(gl.ARRAY_BUFFER,m.mat); gl.enableVertexAttribArray(L.aMat); gl.vertexAttribPointer(L.aMat,4,gl.FLOAT,false,0,0);
+    gl.bindBuffer(gl.ARRAY_BUFFER,m.bind); gl.enableVertexAttribArray(L.aBind); gl.vertexAttribPointer(L.aBind,2,gl.FLOAT,false,0,0);
+  }
+}
+function gpuFigDraw(){
+  var Q=GPUFIG.queue; if(!Q.length||!GLLOC.skin)return;
+  var L=GLLOC.skin;
+  [GLLOC.aPos,GLLOC.aNrm,GLLOC.aCol,GLLOC.aAO].forEach(function(a){ if(a>=0)gl.disableVertexAttribArray(a); });
+  gl.uniform1f(L.uSkin,1);
+  for(var i=0;i<Q.length;i++){ gpuFigAttrs(L,Q[i].mesh,true); gpuFigUniforms(L,Q[i],true); gl.drawArrays(gl.TRIANGLES,0,Q[i].mesh.n); }
+  gl.uniform1f(L.uSkin,0);
+  [L.aSrc,L.aBase,L.aRaw,L.aBind].forEach(function(a){ if(a>=0)gl.disableVertexAttribArray(a); });
+}
+function gpuFigShadow(){
+  var Q=GPUFIG.queue; if(!Q.length||!SHLOC||!SHLOC.skin)return;
+  var L=SHLOC.skin;
+  if(SHLOC.aPos>=0)gl.disableVertexAttribArray(SHLOC.aPos);
+  gl.uniform1f(L.uSkin,1);
+  for(var i=0;i<Q.length;i++){ gpuFigAttrs(L,Q[i].mesh,false); gpuFigUniforms(L,Q[i],false); gl.drawArrays(gl.TRIANGLES,0,Q[i].mesh.n); }
+  gl.uniform1f(L.uSkin,0);
+  [L.aSrc,L.aBase].forEach(function(a){ if(a>=0)gl.disableVertexAttribArray(a); });
+}
+function chGpuFig(){ GPUFIG.want=!GPUFIG.want; GLDIRTY=true; say("Figures",(GPUFIG.want?"Drawn by the graphics chip":"Built in code, the old way")+(GPUFIG.ok?"":" -- this device cannot use the chip path ("+GPUFIG.why+")")+"."); if(typeof drawCheats==="function")drawCheats(); }
+
 var glShadowFB=null,glShadowTex=null,glShadowProg=null,SHLOC=null,SHADOWOK=false,lightVP=new Float32Array(16);
 function initShadowMap(){
   try{
-    glShadowProg=glProgram(SHADOW_V,SHADOW_F);
+    glShadowProg=GPUFIG.ok?glProgram(SHADOW_V_SKIN,SHADOW_F):null;
+    var shSkin=!!glShadowProg;
+    if(!glShadowProg)glShadowProg=glProgram(SHADOW_V,SHADOW_F);
     if(!glShadowProg)return false;
     SHLOC={aPos:gl.getAttribLocation(glShadowProg,"aPos"),uVP:gl.getUniformLocation(glShadowProg,"uVP")};
+    if(shSkin){ SHLOC.skin=gpuFigLocs(glShadowProg,true); gl.useProgram(glShadowProg); gl.uniform1f(SHLOC.skin.uSkin,0);
+      gl.uniform1i(SHLOC.skin.uPosT,2); gl.uniform1i(SHLOC.skin.uNrmT,3); }
     glShadowTex=gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D,glShadowTex);
     gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,SHADOW_SIZE,SHADOW_SIZE,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
@@ -9843,6 +10506,7 @@ function drawShadowPass(){
     gl.drawArrays(gl.TRIANGLES,0,batch.n);
   }
   dp(glStatic.o);dp(glDyn.o);
+  if(gpuFigActive())gpuFigShadow();
   gl.bindFramebuffer(gl.FRAMEBUFFER,null);
 }
 var glSkyBuf=null,GLLOC=null;
@@ -10546,11 +11210,12 @@ function outbreak(k){
   layout();
   return struck;
 }
-function newcomers(){
+function newcomers(force){
   if(!G.npcs||!G.pop0)return;
-  for(var ti=0;ti<2;ti++){
+  for(var ti=0;ti<TOWNS.length;ti++){
+    if(G.pop0[ti]===undefined)continue;
     var have=G.npcs.filter(function(m){return (m.town||0)===ti&&m.head===undefined;}).length;
-    if(have>=G.pop0[ti]||Math.random()>0.45)continue;
+    if(have>=G.pop0[ti]||(!force&&Math.random()>0.45))continue;
     var T=TOWNS[ti], pool=B.filter(function(b){return (b.town||0)===ti&&b.kind!=="market"&&b.dx!==undefined;});
     if(!pool.length)continue;
     var b=pick(pool), isFem=Math.random()<0.35, sx3=T.x, sz3=T.z, spread=(ti===0)?(WALLR*1.7):26;
@@ -10564,7 +11229,7 @@ function newcomers(){
          [70,84,86],[112,92,72],[92,72,58],[78,90,72],[128,112,88],[64,62,60]][rnd(0,11)],
       garb:GARB_STREET[rnd(0,GARB_STREET.length-1)],
       skin:rnd(0,SKINCOLORS.length-1), walkT:0, gaitAmp:0, hx:0, hz:1, gender:isFem?1:0, spouse:null, children:[]});
-    trace("NEWCOMER settles in "+(ti?"Veldkirk":"Gild"));
+    trace("NEWCOMER settles in "+TOWNS[ti].n);
   }
 }
 /* ── the pestilence ──────────────────────────────────────────────────
@@ -12787,7 +13452,8 @@ function glbDrawFigure(op,which,x,z,gy,hx,hz,walkT,gaitAmp,weapon,uid,kid,helm,s
       return true;
     }
   }
-  glbPlace(op,useCh,posed,x,z,gy,hx,hz,uid,build,dress);
+  if(RAW.on&&gpuFigActive()){ blkKey=null; gpuFigQueue(useCh,posed,x,z,gy,hx,hz,uid,build,dress); }
+  else glbPlace(op,useCh,posed,x,z,gy,hx,hz,uid,build,dress);
   if(dress){ try{ glbAccessories(op,useCh,posed,x,z,gy,hx,hz,uid,build,dress,!!helm,(useKey.indexOf("#lod")>=0||useKey.indexOf("#far")>=0)); }
                   catch(e){ if(!GLB_ACC_ERR){GLB_ACC_ERR=1;trace("ACC: "+(e&&e.message));} } }
   if(blkKey){
@@ -14054,7 +14720,7 @@ function glbPickEligible(){
   return s;
 }
 function glDynamic(){
-  RAW.n=0; RAW.on=!INK;
+  RAW.n=0; RAW.on=!INK; GPUFIG.queue.length=0;
   try{ if(G&&!inRoom())markVisible(); }catch(e){}
   lodReset();
   GLB_ROLE_N=0;
@@ -14838,6 +15504,7 @@ function drawGL(){
   gl.uniform1i(GLLOC.uShadowMap,1);
   gl.disable(gl.BLEND);gl.depthMask(true);
   glDrawBatch(glStatic.o);glDrawBatch(glDyn.o);
+  if(gpuFigActive())gpuFigDraw();
   if(INK&&glDyn.k&&glDyn.k.n)glDrawBatch(glDyn.k);
   gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);
   glDrawBatch(glStatic.b);glDrawBatch(glDyn.b);
@@ -15685,7 +16352,10 @@ function step(dt){
            the wall for good, which is the watchman standing in a building.
            Reuse the walkers' own check: only a spot that is actually clear
            is accepted as somewhere to walk to. */
-        var gb=pickIn(g.town||0);
+        var gb=pickIn(g.town||0), tries=0;
+        /* somewhere well away from where he is, so the beat covers the town
+           instead of two neighbouring doors */
+        while(tries++<6&&Math.hypot(gb.dx-g.x,gb.dz-g.z)<18)gb=pickIn(g.town||0);
         var gsp=freeSpotNear(gb.dx+(Math.random()-.5)*2,gb.dz+(Math.random()-.5)*2,2.5);
         if(gsp){ g.tx=gsp[0]; g.tz=gsp[1]; }
         else { var GT=TOWNS[g.town||0]; g.tx=GT.x; g.tz=GT.z; }
@@ -16348,10 +17018,26 @@ function produceOne(hrs,tradeKey){
        than it used to. */
     var haulCap=G.shop.carters*CARTER_HAUL;
     var want=Math.max(sp*(RECIPE+1)*1.15,0.15);
+    /* a contract on the books puts him on the road more, as far as the carts go */
+    if(G.contract&&G.contract.good===tr.outG&&G.contract.done<G.contract.n){
+      var hoursLeft=Math.max(2,((G.contract.until+1)*DAYH)-(G.day*DAYH+G.t));
+      want+=(G.contract.n-G.contract.done)*1.5/hoursLeft; }
     G.shop.fetch=(G.shop.fetch||0)+Math.min(want,haulCap)*hrs;
     var guard=0;
+    /* a branch in Veldkirk or Tannholt buys and sells on its own square;
+       the town it would haul to instead is Gild */
+    var HOME=G.shop.town||0, MH=townMkt(HOME), AWAY=HOME?0:1, MA=townMkt(AWAY);
     while(G.shop.fetch>=1&&guard++<600){
-      var unitC=G.mkt[tr.inG]*(G.guild?1.06:1.18);
+      var unitC=MH[tr.inG]*(G.guild?1.06:1.18);
+      /* Veldkirk sells the raw stuff of every trade for well under Gild's
+         price, and nobody ever went for it. The carter now does, when the
+         saving outlasts the road: a Veldkirk load costs the haul on top and
+         a trip and a half of his day, so he only makes it with time in hand
+         and nothing finished waiting to go out. */
+      /* (a branch does the same the other way: a smith in Veldkirk fetches
+         his iron from Gild, where it is cheaper, and sells tools at home) */
+      var fromV=false, unitV=(MA&&MA[tr.inG])?MA[tr.inG]*(G.guild?1.06:1.18)*1.22:1e9;
+      if(unitV<unitC*0.88&&G.shop.store_out<=RECIPE){ unitC=unitV; fromV=true; }
       var room=Math.max(0,70-G.shop.store_in);
       /* the cart does not spend the wage packet on stock — buying down to
          nothing was what started the spiral where you miss one payday, lose
@@ -16375,7 +17061,25 @@ function produceOne(hrs,tradeKey){
          fast the bench eats, or a quick trade like baking runs dry on a
          stock that would last a smith half a day */
       var buf=Math.min(60,RECIPE*4+sp*RECIPE*5);
-      if(canBuy&&G.shop.store_in<buf){G.coin-=unitC;G.shop.store_in++;moved=true;}
+      /* (the half-trip extra for the longer road is owed from his next
+         hour -- asking for a trip and a half in hand meant it almost never
+         happened, because he spends each trip the moment he has it) */
+      var contractDue=G.contract&&G.contract.good===tr.outG&&G.contract.done<G.contract.n&&G.shop.store_out>0&&G.shop.store_in>=RECIPE*2;
+      if(contractDue){
+        /* the bench has enough in hand: a load for the contract goes first */
+        G.coin+=G.contract.pay*(1-tollRate()); G.shop.store_out--; G.contract.done++; G.shop.fetch-=0.5; moved=true;
+        if(G.contract.done>=G.contract.n)contractDone();
+      }
+      else if(canBuy&&G.shop.store_in<buf){G.coin-=unitC;G.shop.store_in++;moved=true;
+        /* Veldkirk's grain is not bottomless: every load taken off its square
+           is a load its own people cannot buy, and the price there rises
+           until the road is no longer worth it */
+        if(fromV){ G.shop.fetch-=0.5; G.shop.boughtV=(G.shop.boughtV||0)+1; try{ addSupply(AWAY,tr.inG,-1); }catch(e){} } }
+      else if(G.shop.store_out>0&&G.contract&&G.contract.good===tr.outG&&G.contract.done<G.contract.n){
+        /* a contract comes first: the load goes up the road to Veldkirk's hall */
+        G.coin+=G.contract.pay*(1-tollRate()); G.shop.store_out--; G.contract.done++; G.shop.fetch-=0.5; moved=true;
+        if(G.contract.done>=G.contract.n)contractDone();
+      }
       else if(G.shop.store_out>0){
         /* A carter is not obliged to dump everything on his own doorstep.
            He takes the better of the two towns — Veldkirk pays less the
@@ -16384,11 +17088,17 @@ function produceOne(hrs,tradeKey){
            price that is poor but is not nothing. Without that floor a good
            week's production drove its own price under cost and the whole
            trade collapsed. */
-        var pHere=Math.min(G.mkt[tr.outG],scarcityPrice(0,tr.outG));
-        var pThere=Math.min(G.mkt2[tr.outG],scarcityPrice(1,tr.outG))*0.88;
+        var pHere=Math.min(MH[tr.outG],scarcityPrice(HOME,tr.outG));
+        var pThere=Math.min(MA[tr.outG],scarcityPrice(AWAY,tr.outG))*0.88;
         var floor=GOODS[tr.outG].b*0.55;
-        var to=(pThere>pHere)?1:0;
-        var got2=Math.max(floor,to?pThere:pHere);
+        var to=(pThere>pHere)?AWAY:HOME;
+        /* a branch serves its own town: it does not cart its goods back to
+           Gild to glut the main shop's market, and if its own square will
+           not pay what the stock cost it keeps the stock. */
+        var inCost=MH[tr.inG]*RECIPE*(G.guild?1.06:1.18);
+        if(HOME!==0){ to=HOME; if(pHere<inCost*1.05){ break; } }
+
+        var got2=(HOME!==0)?pHere:Math.max(floor,(to===AWAY)?pThere:pHere);
         addSupply(to,tr.outG,1);
         G.coin+=got2*0.95*(1-tollRate());G.shop.store_out--;moved=true;
       }
@@ -16399,7 +17109,7 @@ function produceOne(hrs,tradeKey){
     /* no banking a week of unused trips while you had no coin */
     G.shop.fetch=Math.min(G.shop.fetch,haulCap*2);
   }
-  if(G.shop.store_in>=RECIPE){
+  if(G.shop.store_in>=RECIPE&&!((G.shop.town||0)!==0&&G.shop.store_out>=30)){   /* a branch with thirty unsold pieces stops the bench */
     G.shop.prog+=sp*hrs;
     while(G.shop.prog>=1&&G.shop.store_in>=RECIPE){
       G.shop.prog-=1;G.shop.store_in-=RECIPE;G.shop.store_out++;
@@ -16576,6 +17286,8 @@ function famDayTick(){
   }
 }
 function newDay(){
+  try{ contractTick(); }catch(e){}
+  try{ topUpWatch(); }catch(e){}
   if(G&&G.eq){ var rp=invBonus("rep"); if(rp)G.rep=clamp((G.rep||0)+rp,0,100); }
   G.day++;
   G.__served=0;
@@ -16587,7 +17299,9 @@ function newDay(){
   var shops=G.shops||[G.shop], wage=0, hands=0, carts=0, si;
   for(si=0;si<shops.length;si++){
     hands+=shops[si].workers||0; carts+=shops[si].carters||0;
-    wage+=(shops[si].workers||0)*handWage()+(shops[si].carters||0)*carterWage();
+    var wf=[1,0.8,0.7][shops[si].town||0]||1;           /* Veldkirk and Tannholt men work for less */
+    wage+=Math.round(((shops[si].workers||0)*handWage(shops[si].lvl||1)+(shops[si].carters||0)*carterWage(shops[si].lvl||1))*wf);
+    if((shops[si].town||0)!==0)wage+=branchRent(shops[si].town);   /* and a branch pays its rent to the hall */
   }
   if(wage){
     if(G.coin>=wage){
@@ -19665,7 +20379,7 @@ function drawHere(){
     h='<div class="sub">'+esc(TOWNS[playerTown()].n)+' &middot; market square</div><h2>Stalls and shouting</h2>';
     h+='<table class="tbl">';
     for(g in GOODS){
-      var pr=MKT()[g],bs=(playerTown()===1?veldBase(g):GOODS[g].b);
+      var pr=MKT()[g],bs=townBase(playerTown(),g);
       var d=pr>bs*1.08?'<span style="color:var(--blood)">&#9650;</span>':pr<bs*.92?'<span style="color:var(--moss)">&#9660;</span>':'<span class="g">&middot;</span>';
       h+='<tr><td class="g">'+GOODS[g].n+(G.bag[g]?' <b>&times;'+G.bag[g]+'</b>':'')+'</td><td>'+d+' '+fmt(pr)+'</td></tr>';
     }
@@ -19872,6 +20586,7 @@ function drawHere(){
     h+='<p>The staple hall: weights, measures, and the tolls on everything that comes up the road.</p>';
     h+='<p class="fine">Rank and office in Gild are Gild\'s to grant. They will not be sold to you here, '+
        'whatever you are willing to pay. Your standing in Gild is '+Math.round(G.rep)+'.</p>';
+    h+=contractPanel();
   } else if(here.kind==="biz"){
     /* another man's trade: whose it is, what he makes, and what he will
        pay for the goods you carry */
@@ -20134,18 +20849,21 @@ function drawHere(){
       h+='<button class="btn sm" onclick="sellDeed(\''+here.id+'\')">Sell the deed</button>';
     }
   } else if(here.kind==="vacant"){
-    h='<div class="sub">Veldkirk</div><h2>'+esc(here.n)+'</h2>';
-    h+='<p>Shuttered, swept, and standing empty. The staple hall holds the deed and would rather '+
-       'it held a tenant.</p>';
-    h+='<p class="fine">You cannot take a second workshop yet — that comes later. For now it is '+
-       'somewhere out of the rain.</p>';
+    var vT=TOWNS[here.town||0], vc=branchCost(here), vLim=Math.max(1,G.title), vHave=(G.shops||[G.shop]).length;
+    h='<div class="sub">'+esc(vT.n)+'</div><h2>'+esc(here.n)+'</h2>';
+    h+='<p>Shuttered, swept, and standing empty. '+(here.town===1?'The staple hall':'The verderer')+' holds the deed and would rather it held a tenant.</p>';
+    h+='<p>Take it as a branch of your house: a '+esc(TRADES[G.trade].n.toLowerCase())+'\'s bench that buys and sells on '+esc(vT.n)+'\'s own square, with its own hands and carters. '+
+       fmt(vc)+' for the lease, then '+fmt(branchRent(here.town))+' a day to the hall. Men here work for '+(here.town===2?'seven':'eight')+' tenths of Gild\'s wage.</p>';
+    if(G.title<BRANCH_RANK)h+='<p class="fine">The hall leases only to a '+TITLES[BRANCH_RANK].n+' or better.</p>';
+    else if(vHave>=vLim)h+='<p class="fine">A man of your rank may run '+vLim+' workshop'+(vLim>1?'s':'')+'. The next rank allows another.</p>';
+    else h+='<button class="btn gold" onclick="takeBranch(\''+here.id+'\')">Take the lease &middot; '+fmt(vc)+'</button>';
   }
   el.innerHTML=h;
 }
 
 /* ════════════════ HUD ════════════════ */
 function layout(){
-  try{ invInit(); drawFx(); }catch(e){}
+  try{ invInit(); drawFx(); drawTbar(); }catch(e){}
   if(!G)return;
   famRoster();
   $("whoN").textContent=G.name;
@@ -20699,6 +21417,7 @@ function drawCheats(){
   if(!G){c.innerHTML='<p class="fine" style="margin:0">Enter the city first.</p>';return;}
   c.innerHTML='<p class="fine" style="margin:0 0 2px">Testing tools. These are cheats.</p>'+
     '<button class="btn sm" onclick="chSurfaces()">'+(SURFDBG?"Normal ground":"Show ground layers")+'</button>'+
+    '<button class="btn sm" onclick="chGpuFig()">Figures: '+((GPUFIG.ok&&GPUFIG.want)?"graphics chip":"in code")+'</button>'+
     '<button class="btn sm gold" onclick="chCoin()">+10,000 coin</button>'+
     '<button class="btn sm" onclick="chRep()">+25 standing</button>'+
     '<button class="btn sm gold" onclick="chTitle()">Next rank, free</button>'+
@@ -21009,6 +21728,9 @@ $("resume").onclick=function(){
     if(G.trial===undefined)G.trial=null;
     if(!G.record)G.record={convictions:0,last:null};
     if(!G.mkt2){G.mkt2={};for(var _g in GOODS)G.mkt2[_g]=veldBase(_g);}
+    if(!G.mkt3){G.mkt3={};for(var _g3 in GOODS)G.mkt3[_g3]=tannBase(_g3);}
+    /* a save from before Tannholt: the village is peopled on arrival */
+    if(G.pop0&&G.pop0.length<3){ G.pop0.push(24); for(var _nc=0;_nc<30;_nc++)newcomers(true); }
     if(G.cart===undefined){G.cart=0;recalcCap();}
     if(!G.road)G.road=[];
     if(!G.robbers)G.robbers=[];
