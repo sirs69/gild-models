@@ -258,7 +258,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.046</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.047</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -4412,7 +4412,18 @@ function goTo(x,z){
      and it is not "walk over there in a moment". It means run. */
   if(FIGHT&&!FIGHT.over){fightFlee();return;}
   var w=clampWalk(x,z);
-  G.path=routeTo(w[0],w[1]);
+  var pth=routeTo(w[0],w[1]);
+  /* The road graph does not reach every door: taps on some of your own
+     holdings left you standing where you were, which reads as the icon
+     being dead. The walkable grid everyone else walks on is asked as well,
+     and the shorter honest route wins. */
+  var g=(typeof navGridAt==="function")?navGridAt(G.px,G.pz):null;
+  if(g&&navGridAt(w[0],w[1])===g){
+    var np=navPlan(g,0.48,G.px,G.pz,w[0],w[1]);
+    if(np&&np.length){ np.push([w[0],w[1]]); if(!pth||!pth.length||np.length<=pth.length+2)pth=np; }
+  }
+  if(!pth||!pth.length)pth=[[w[0],w[1]]];
+  G.path=pth;
   G.tx=G.path[0][0];G.tz=G.path[0][1];
   G.run=!!TAPRUN;
 }
@@ -4836,7 +4847,21 @@ function vendorsOpen(){return G.t>=VEND_OPEN&&G.t<VEND_SHUT;}
    the empty ground at his back. The counter runs at z-0.30 and the back
    board at z+0.65, so the place a stallholder stands is between the two,
    under the awning, facing the square. */
-function vendorSeat(st){return [st.x+0.10,st.z+0.34];}
+/* He stood behind the counter and under the canopy, which from any normal
+   camera angle is a roof over him: six stallholders nobody could see. He
+   keeps his stall at his back and stands at the open end of the counter,
+   out from under the cloth, facing the square. */
+function vendorSeat(st){
+  var side=(st.x<0)?-1:1, i=STALLS.indexOf(st), was=BLOCK_IGNORE;
+  BLOCK_IGNORE=(i>=0)?("stall"+i):BLOCK_IGNORE;          /* his own stall is not in his way */
+  var x=st.x+side*1.8, z=st.z+0.10;
+  if(typeof blockedAt==="function"&&blockedAt(x,z,0.42)){
+    x=st.x-side*1.8;
+    if(blockedAt(x,z,0.42)){ x=st.x+0.10; z=st.z+0.34; }
+  }
+  BLOCK_IGNORE=was;
+  return [x,z];
+}
 function syncVendors(){
   if(!G||!STALLS.length)return;
   if(!G.vendors)G.vendors=[];
@@ -7357,6 +7382,17 @@ function buildRoomGeo(kind){
       [[168,150,96],[126,148,110],[150,120,110],[140,138,160],[176,164,120],[132,156,140]][jr]);
   shelfG(W/2-0.9,-D/2+3.0,3.2,3,2.0,[126,102,68]);
   shelfG(W/2-0.9, D/2-3.0,2.4,2,2.0,[126,102,68]);
+  /* The middle of the room was bare boards, and the panel promised ledgers
+     on a desk: here they are, where you see them from the door -- the desk
+     he keeps his cases in, a stool, an open book, and a brazier going. */
+  boxG(0.2,-D/2+4.2,2.6,1.3,0,0.78,[124,98,64],0,TILE.PLANK);        /* the desk */
+  boxG(-0.7,-D/2+4.2,0.9,0.7,0.78,0.86,[210,200,178]);               /* an open ledger */
+  boxG(1.0,-D/2+4.2,0.5,0.34,0.78,0.92,[150,118,86]);                /* a stack of books */
+  boxG(1.0,-D/2+4.2,0.46,0.30,0.92,1.02,[168,140,104]);
+  boxG(0.2,-D/2+2.9,0.62,0.62,0,0.46,[112,88,58],0,TILE.PLANK);      /* the stool */
+  roomSolid(0.2,-D/2+4.0,2.8,1.8,"desk");
+  boxG(-2.6,-D/2+4.6,0.8,0.8,0,0.34,[92,86,80],0,TILE.STONE);        /* the brazier */
+  boxG(-2.6,-D/2+4.6,0.62,0.62,0.34,0.46,[188,104,52]);
   /* a scale, because he is paid by weight of what he makes */
   boxG(W/2-2.0,3.4,0.20,0.20,0.92,1.36,[150,140,110]);
   boxG(W/2-2.4,3.4,0.44,0.44,1.36,1.40,[186,180,150]);
@@ -13914,6 +13950,18 @@ function glDynamic(){
          person now, or off their position if there is no person. */
       var sk=who?(who.skin||0):(Math.abs(Math.round(x*7+z*13))%SKINCOLORS.length);
       var ail=who?ailmentOf(who):null;
+      /* Indoors was the last place still drawing the old carved figures:
+         your own hands at the bench, the congregation, the drinkers, you.
+         Anyone standing is drawn as the model he is outside; sitting and
+         bench work still use the carved figure, which is the only one that
+         can bend. */
+      if(swing!==11&&!(pose||0)&&!(yb>0.05)){
+        var ruid=who?(who.uid||1):Math.abs(Math.round(x*31+z*17));
+        var rwhich=glbForRole("walker",who?(who.gender||0):(fem?1:0),ruid);
+        if(rwhich&&glbDrawFigure(op,rwhich,x,z,(yb||0),hx2,hz2,0,0,null,ruid,false,null,who||null)){
+          shadowBlob(bl,x,(yb||0)+.003,z,.5,0.26); return;
+        }
+      }
       /* swing used to drive the walk cycle, so everyone "working" trudged
          on the spot. It is a working pose now: 11 bends over a bed, any
          other truthy value is hands at a bench. */
@@ -14033,7 +14081,12 @@ function glDynamic(){
       for(var ki2=0;ki2<kn;ki2++)
         occupant(RW/2-3.0,-2.6+ki2*1.8,[104,92,52],1,0,false,ki2%2===0,false,0,null,0,"child");
     }
-    glPerson(op,G.px,G.pz,[196,66,52],true,true,G.skin,G.walkT,G.gaitAmp,G.hx,G.hz,G.sex||0,false,0,G.pseed||7,0,0,pGarb());
+    /* you were the last carved figure left: indoors you are the same model,
+       in the same clothes, as you are on the street */
+    var _pmw=null; try{ _pmw=(G.look&&G.look.seed===G.pseed&&lookModel(G.look))||glbForRole("walker",G.sex||0,G.pseed||7); }catch(e){}
+    var _pdr=false;
+    if(_pmw){ GLB_PLAYER_DRAW=true; try{ _pdr=glbDrawFigure(op,_pmw,G.px,G.pz,0,G.hx,G.hz,G.walkT,G.gaitAmp,null,G.pseed||7); }catch(e){} GLB_PLAYER_DRAW=false; }
+    if(!_pdr)glPerson(op,G.px,G.pz,[196,66,52],true,true,G.skin,G.walkT,G.gaitAmp,G.hx,G.hz,G.sex||0,false,0,G.pseed||7,0,0,pGarb());
     shadowBlob(bl,G.px,.003,G.pz,.6,0.30);
     var inkR=[]; if(INK&&glDyn.k)inkHull(op,inkR);
     glBuild(op,glDyn.o,RAW.on?RAW:null);RAW.on=false;RAW.n=0;glBuild(bl,glDyn.b);if(glDyn.k)glBuild(inkR,glDyn.k);
@@ -14068,7 +14121,12 @@ function glDynamic(){
       var gxx=(sideL?-1:1)*(W2*0.24+((row)-1)*0.5);
       seat(gxx,gzz,galC[gi2%4],0,-1);
     }
-    glPerson(op,G.px,G.pz,[196,66,52],true,true,G.skin,G.walkT,G.gaitAmp,G.hx,G.hz,G.sex||0,false,0,G.pseed||7,0,0,pGarb());
+    /* you were the last carved figure left: indoors you are the same model,
+       in the same clothes, as you are on the street */
+    var _pmw=null; try{ _pmw=(G.look&&G.look.seed===G.pseed&&lookModel(G.look))||glbForRole("walker",G.sex||0,G.pseed||7); }catch(e){}
+    var _pdr=false;
+    if(_pmw){ GLB_PLAYER_DRAW=true; try{ _pdr=glbDrawFigure(op,_pmw,G.px,G.pz,0,G.hx,G.hz,G.walkT,G.gaitAmp,null,G.pseed||7); }catch(e){} GLB_PLAYER_DRAW=false; }
+    if(!_pdr)glPerson(op,G.px,G.pz,[196,66,52],true,true,G.skin,G.walkT,G.gaitAmp,G.hx,G.hz,G.sex||0,false,0,G.pseed||7,0,0,pGarb());
     shadowBlob(bl,G.px,.003,G.pz,.6,0.30);
     var inkR=[]; if(INK&&glDyn.k)inkHull(op,inkR);
     glBuild(op,glDyn.o,RAW.on?RAW:null);RAW.on=false;RAW.n=0;glBuild(bl,glDyn.b);if(glDyn.k)glBuild(inkR,glDyn.k);
