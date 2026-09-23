@@ -91,6 +91,12 @@ body.hc #cheatbox{background:#111}
   font-family:"Alegreya Sans",system-ui,sans-serif;font-size:calc(15px * var(--s));font-weight:700}
 /* ── the four of the house ── */
 .roster{position:absolute;left:10px;top:10px;display:flex;gap:6px;z-index:5}
+.fxbar{position:absolute;left:10px;display:flex;flex-wrap:wrap;gap:4px;z-index:5;max-width:55%;pointer-events:auto}
+.fx{background:rgba(21,17,9,.78);border:1px solid var(--edge);border-radius:11px;padding:1px 8px;
+  font-size:calc(11.5px * var(--s));line-height:1.6;color:var(--bone);cursor:pointer;white-space:nowrap}
+.fx.bad{border-color:var(--blood);color:#eab4a8}
+.fx.warn{border-color:#a8843a;color:#e8d2a0}
+.fx.good{border-color:var(--moss);color:#c8dcb0}
 .slot{width:calc(50px * var(--s));background:rgba(21,17,9,.82);border:1px solid var(--edge);border-radius:5px;
   padding:3px;text-align:center;cursor:pointer}
 .slot canvas{display:block;width:100%;height:auto;border-radius:3px}
@@ -258,7 +264,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.047</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.048</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -304,6 +310,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
         <span class="chip" id="cHold" onclick="holdings()" style="cursor:pointer">Holdings</span>
         <span class="chip" id="cBuild" onclick="toggleBuildMode()" style="cursor:pointer">Build</span>
         <span class="chip" id="cFam" onclick="famSheet()" style="cursor:pointer">Family</span>
+        <span class="chip" id="cPack" onclick="invSheet()" style="cursor:pointer">Pack</span>
         <span class="chip" id="cTorch" style="display:none"></span>
       </div>
     </div>
@@ -326,6 +333,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
       <div class="clock" id="clock">—</div>
       <div class="bbar" id="bbar"></div>
       <div class="roster" id="roster"></div>
+      <div class="fxbar" id="fxbar"></div>
       <button id="stepOutBtn" onclick="walkOutOfCourt()" style="display:none;position:absolute;
         left:50%;bottom:14px;transform:translateX(-50%);z-index:6;padding:8px 16px;
         background:rgba(20,16,10,.88);color:#F2E6C8;border:1px solid #B8923E;border-radius:10px;
@@ -1571,6 +1579,106 @@ function ownedBuildings(){
   });
   return out;
 }
+/* ── the state you are in, at a glance ────────────────────────────────
+   Illness, how worn down you are, whether the watch is after you, the
+   pestilence in the town, what you have about you: small tags under your
+   family, each one tapped for what it means. */
+var FXKEY="";
+function fxList(){
+  var L=[];
+  if(!G||G.over)return L;
+  if(G.ill){ var an=(AILMENTS[G.ill.k]||{n:"a fever"}).n, sv=["","mild","bad","grave"][G.ill.sev||1]||"bad";
+    L.push({c:"bad",t:"Ill · "+an.replace(/^an? /,"")+" ("+sv+")",d:"You have "+an+", "+sv+", "+(G.ill.days||0)+" day"+((G.ill.days===1)?"":"s")+" on you. It takes vigour every day until it breaks; the infirmary or a physician treats it."}); }
+  if(G.vig<25)L.push({c:"bad",t:"Worn out",d:"Vigour "+Math.round(G.vig)+". You fight badly and catch every fever going. Sleep."});
+  else if(G.vig<50)L.push({c:"warn",t:"Tired",d:"Vigour "+Math.round(G.vig)+". A night's sleep puts it right."});
+  if(G.heat>=30)L.push({c:"bad",t:"Wanted",d:"The watch is looking for you (heat "+Math.round(G.heat)+"). Stay out of their way until it cools."});
+  else if(G.heat>=10)L.push({c:"warn",t:"Watched",d:"The watch has noticed you (heat "+Math.round(G.heat)+")."});
+  if(G.plagueDays>0)L.push({c:"bad",t:"Pestilence in town",d:"The pestilence is in the town for another "+G.plagueDays+" day"+(G.plagueDays===1?"":"s")+". Keep your people out of crowds."});
+  if(FIGHT&&!FIGHT.over)L.push({c:"bad",t:"Fighting",d:"Steel is out."});
+  if(G.eq){ var eqn=[]; for(var sl in G.eq)if(G.eq[sl]&&ITEMS[G.eq[sl]])eqn.push(ITEMS[G.eq[sl]].n);
+    if(eqn.length)L.push({c:"good",t:"Carrying "+eqn.length,d:"About you: "+eqn.join(", ")+"."}); }
+  return L;
+}
+function drawFx(){
+  var el=$("fxbar"); if(!el)return;
+  var L=fxList(), key=L.map(function(f){return f.t;}).join("|");
+  var ro=$("roster"); if(ro)el.style.top=(ro.offsetTop+ro.offsetHeight+6)+"px";
+  el.style.display=(L.length&&!inRoom())?"flex":"none";
+  if(key===FXKEY)return; FXKEY=key;
+  el.innerHTML=L.map(function(f,i){return '<span class="fx '+f.c+'" onclick="fxTap('+i+')">'+esc(f.t)+'</span>';}).join("");
+}
+function fxTap(i){ var f=fxList()[i]; if(f)say(f.t,f.d); }
+/* ── what you carry ───────────────────────────────────────────────────
+   Arms, armour and small things of your own, bought at the market and
+   worn in five places: the hand, the body, the head and two charms. Each
+   does one plain thing, and every number here is what it does. */
+var ITEMS={
+  cudgel:  {n:"A cudgel",        slot:"hand", p:40,  acc:3, dmg:2, d:"+3 to hit, +2 a blow"},
+  dagger:  {n:"A dagger",        slot:"hand", p:95,  acc:6, dmg:3, d:"+6 to hit, +3 a blow"},
+  falchion:{n:"A falchion",      slot:"hand", p:260, acc:4, dmg:5, d:"+4 to hit, +5 a blow"},
+  sword:   {n:"An arming sword", slot:"hand", p:540, acc:8, dmg:7, d:"+8 to hit, +7 a blow"},
+  jack:    {n:"A padded jack",   slot:"body", p:120, arm:2, d:"2 less from every blow"},
+  jerkin:  {n:"A leather jerkin",slot:"body", p:240, arm:3, d:"3 less from every blow"},
+  mail:    {n:"A mail shirt",    slot:"body", p:720, arm:5, acc:-4, d:"5 less from every blow, -4 to hit"},
+  kettle:  {n:"A kettle hat",    slot:"head", p:180, arm:1, d:"1 less from every blow"},
+  medal:   {n:"A saint's medal", slot:"charm",p:150, ward:0.35, d:"a third less likely to take a fever"},
+  foot:    {n:"A rabbit's foot", slot:"charm",p:80,  acc:4, d:"+4 to hit"},
+  badge:   {n:"A pilgrim's badge",slot:"charm",p:120,rest:1, d:"a fever takes half the vigour from you each day"},
+  coin:    {n:"A lucky coin",    slot:"charm",p:60,  purse:0.3, d:"a robber who beats you takes 30% less"},
+  signet:  {n:"A signet ring",   slot:"charm",p:420, rep:0.3, d:"+0.3 standing every day it is worn"}
+};
+var EQ_SLOTS=["hand","body","head","charm1","charm2"];
+function invInit(){ if(!G)return; if(!G.inv)G.inv=[]; if(!G.eq)G.eq={}; }
+function invBonus(stat){
+  if(!G||!G.eq)return 0; var t=0;
+  for(var sl in G.eq){ var it=ITEMS[G.eq[sl]]; if(it&&it[stat])t+=it[stat]; }
+  return t;
+}
+function slotFor(k){ var it=ITEMS[k]; if(!it)return null; if(it.slot!=="charm")return it.slot;
+  return (!G.eq.charm1)?"charm1":((!G.eq.charm2)?"charm2":"charm1"); }
+function invSheet(){
+  if(!G)return; invInit();
+  var h='<div class="sub">What you carry</div><h3>Your pack</h3><table class="tbl">';
+  var NAMES={hand:"In hand",body:"On your back",head:"On your head",charm1:"A charm",charm2:"Another charm"};
+  EQ_SLOTS.forEach(function(sl){ var k=G.eq[sl], it=ITEMS[k];
+    h+='<tr><td class="g">'+NAMES[sl]+'</td><td>'+(it?esc(it.n)+' <span class="fine">'+esc(it.d)+'</span> '+
+      '<button class="btn sm" onclick="invUnequip(\''+sl+'\')">Take off</button>':'<span class="fine">nothing</span>')+'</td></tr>'; });
+  h+='</table>';
+  var loose=G.inv.filter(function(k){ for(var sl in G.eq)if(G.eq[sl]===k)return false; return !!ITEMS[k]; });
+  if(loose.length){ h+='<p class="fine" style="margin-top:8px">In the pack</p><table class="tbl">';
+    loose.forEach(function(k){ var it=ITEMS[k];
+      h+='<tr><td>'+esc(it.n)+' <span class="fine">'+esc(it.d)+'</span></td><td>'+
+        '<button class="btn sm" onclick="invEquip(\''+k+'\')">Wear it</button> '+
+        '<button class="btn sm" onclick="invSell(\''+k+'\')">Sell · '+fmt(Math.round(it.p/2))+'</button></td></tr>'; });
+    h+='</table>'; }
+  else if(!G.inv.length)h+='<p class="fine" style="margin-top:8px">Nothing yet. The market sells arms, armour and trinkets.</p>';
+  h+='<button class="btn" style="width:100%;margin-top:10px" onclick="closeSheet()">Close</button>';
+  $("sheet").innerHTML=h; $("veil").classList.add("on");
+}
+function armsSheet(){
+  if(!G)return; invInit();
+  var h='<div class="sub">'+esc(TOWNS[playerTown()].n)+' &middot; market square</div><h3>Arms, armour and trinkets</h3>'+
+        '<p class="fine">Coin in hand: '+fmt(G.coin)+'</p><table class="tbl">';
+  for(var k in ITEMS){ var it=ITEMS[k], have=G.inv.indexOf(k)>=0;
+    h+='<tr><td>'+esc(it.n)+'<br><span class="fine">'+esc(it.d)+'</span></td><td>'+
+      (have?'<span class="fine">yours</span>':'<button class="btn sm'+(G.coin>=it.p?' gold':'')+'" onclick="armsBuy(\''+k+'\')">'+fmt(it.p)+'</button>')+'</td></tr>'; }
+  h+='</table><button class="btn" style="width:100%;margin-top:10px" onclick="closeSheet()">Leave the stall</button>';
+  $("sheet").innerHTML=h; $("veil").classList.add("on");
+}
+function armsBuy(k){
+  var it=ITEMS[k]; if(!it)return; invInit();
+  if(G.inv.indexOf(k)>=0)return armsSheet();
+  if(G.coin<it.p)return say("Not enough","That is "+fmt(it.p)+". You have "+fmt(G.coin)+".");
+  G.coin-=it.p; G.inv.push(k);
+  var sl=slotFor(k); if(sl&&!G.eq[sl])G.eq[sl]=k;          /* worn at once if the place is free */
+  note("Bought "+it.n.toLowerCase()+" for "+fmt(it.p));
+  armsSheet(); layout();
+}
+function invEquip(k){ invInit(); var sl=slotFor(k); if(!sl)return; G.eq[sl]=k; invSheet(); layout(); }
+function invUnequip(sl){ invInit(); delete G.eq[sl]; invSheet(); layout(); }
+function invSell(k){ invInit(); var it=ITEMS[k]; if(!it)return; var i=G.inv.indexOf(k); if(i<0)return;
+  for(var sl in G.eq)if(G.eq[sl]===k)delete G.eq[sl];
+  G.inv.splice(i,1); G.coin+=Math.round(it.p/2); note("Sold "+it.n.toLowerCase()); invSheet(); layout(); }
 function holdings(){
   if(!G)return;
   var mine=ownedBuildings(), i;
@@ -3879,11 +3987,11 @@ function fightSwing(mode){
   var prof={wild:{acc:52,dmg:[7,15],open:16},
             even:{acc:66,dmg:[4,10],open:8},
             guard:{acc:74,dmg:[2,5],open:-6}}[mode];
-  var acc=prof.acc+G.title*3+(G.vig>60?6:-6)-Math.min(14,(F.round||1)*1.2);
+  var acc=prof.acc+G.title*3+(G.vig>60?6:-6)-Math.min(14,(F.round||1)*1.2)+invBonus("acc");
   var line="";
   var youHit=false, heHit=false, hisSwing=false;
   if(rnd(1,100)<=acc){
-    var d=rnd(prof.dmg[0],prof.dmg[1]);
+    var d=rnd(prof.dmg[0],prof.dmg[1])+invBonus("dmg");
     F.hpFoe-=d; youHit=true;
     line="You land it — "+d+".";
   } else line="You swing wide.";
@@ -3891,7 +3999,7 @@ function fightSwing(mode){
   if(F.hpFoe>0){
     var hisAcc=46+F.skill+prof.open; hisSwing=true;
     if(rnd(1,100)<=hisAcc){
-      var hd=rnd(3,10)+Math.round(F.skill/3);
+      var hd=Math.max(1,rnd(3,10)+Math.round(F.skill/3)-invBonus("arm"));
       F.hpYou-=hd; heHit=true;
       line+=" He cuts you back — "+hd+".";
     } else line+=" He misses.";
@@ -4032,7 +4140,7 @@ function fightFlee(){
   var F=FIGHT; if(!F)return;
   /* running is not free — he gets a parting swing */
   if(rnd(1,100)<=55){
-    var hd=rnd(4,12);
+    var hd=Math.max(1,(rnd(4,12))-invBonus("arm"));
     F.hpYou-=hd;
     G.vig=clamp(G.vig-Math.round(hd*0.6),0,100);
   }
@@ -4183,6 +4291,7 @@ function accosted(b){
           },
           onLose:function(F){
             var kk=G.robbers.indexOf(b); if(kk>=0)G.robbers.splice(kk,1);
+            take=Math.round(take*(1-Math.min(0.6,invBonus("purse"))));
             var lost=Math.min(G.coin,take);
             G.coin=Math.max(0,G.coin-take);
             /* what he takes goes into the house's strongbox, not nowhere */
@@ -5815,7 +5924,7 @@ function syncWorkers(){
   if(!shopP)return;
   /* hands: every one of them works at the bench, inside */
   while(G.workerNpcs.length<G.shop.workers)
-    G.workerNpcs.push({x:shopP.dx,z:shopP.dz,
+    G.workerNpcs.push({x:shopP.dx,z:shopP.dz,uid:npcUid(),garb:crewGarb(false),
       skin:rnd(0,SKINCOLORS.length-1),c:[168,140,96],walkT:0,gaitAmp:0,hx:0,hz:1,
       gender:Math.random()<0.35?1:0,spouse:null,children:[]});
   while(G.workerNpcs.length>G.shop.workers)G.workerNpcs.pop();
@@ -5823,10 +5932,24 @@ function syncWorkers(){
      a hand at the bench is not going to stop kneading to walk to the
      stalls, so moving goods costs its own wage */
   while(G.carterNpcs.length<G.shop.carters)
-    G.carterNpcs.push({x:shopP.dx,z:shopP.dz,toMarket:Math.random()<0.5,
+    G.carterNpcs.push({x:shopP.dx,z:shopP.dz,toMarket:Math.random()<0.5,uid:npcUid(),garb:crewGarb(true),
       skin:rnd(0,SKINCOLORS.length-1),c:[132,108,72],walkT:0,gaitAmp:0,hx:0,hz:1,
       gender:Math.random()<0.35?1:0});
   while(G.carterNpcs.length>G.shop.carters)G.carterNpcs.pop();
+  /* Your hands had no number of their own, so every one of them was dressed
+     by the same roll: the same face, the same colours, the same cape. Each
+     now has his own, and working clothes for the trade (older saves are
+     given theirs here). */
+  (G.workerNpcs||[]).concat(G.carterNpcs||[]).forEach(function(m,ci){
+    if(!m.uid)m.uid=npcUid();
+    if(!m.garb)m.garb=crewGarb(G.carterNpcs.indexOf(m)>=0);
+  });
+}
+function crewGarb(carter){
+  if(carter)return "porter";
+  var t=TRADES[G.trade]||{};
+  if(t.service||G.trade==="apothecary")return "coat";
+  return "labourer";
 }
 function carterCap(){return Math.min(3,(G.shop.lvl||1)+1);}
 function hireCarter(){
@@ -16337,7 +16460,7 @@ function playerIllDay(){
   if(G.ill){
     G.ill.days++;
     var sev=G.ill.sev;
-    G.vig=clamp(G.vig-sev*rnd(2,5),0,100);
+    G.vig=clamp(G.vig-sev*rnd(2,5)*(invBonus("rest")?0.5:1),0,100);
     /* it breaks, or it deepens */
     /* how long it had been on you, kept before anything can clear it */
     var illDays=G.ill.days;
@@ -16372,6 +16495,7 @@ function playerIllDay(){
   if(G.day<16)return false;
   var season=Math.floor(G.day/DAYS_PER_SEASON)%4;
   var odds=0.006+(100-G.vig)*0.00042+((season===3)?0.006:0)+((G.age>52)?0.005:0);
+  odds*=(1-Math.min(0.6,invBonus("ward")));
   if(Math.random()<odds){
     G.ill={sev:1,days:0};
     note("You have taken a fever.");
@@ -16452,6 +16576,7 @@ function famDayTick(){
   }
 }
 function newDay(){
+  if(G&&G.eq){ var rp=invBonus("rep"); if(rp)G.rep=clamp((G.rep||0)+rp,0,100); }
   G.day++;
   G.__served=0;
   G.__homed=0;
@@ -19546,6 +19671,7 @@ function drawHere(){
     }
     h+='</table>';
     h+='<button class="btn gold" onclick="buy(\''+tr.inG+'\',5)">Buy 5 '+GOODS[tr.inG].n+'</button>';
+    h+='<button class="btn" onclick="armsSheet()">Arms, armour and trinkets</button>';
     h+='<button class="btn sm" onclick="buy(\''+tr.inG+'\',10)">Buy 10</button>';
     h+='<button class="btn sm" onclick="buyTorch()">Buy a torch &middot; 14'+(G.torches?' &middot; carrying '+G.torches:'')+'</button>';
     if(canLabour())
@@ -20019,6 +20145,7 @@ function drawHere(){
 
 /* ════════════════ HUD ════════════════ */
 function layout(){
+  try{ invInit(); drawFx(); }catch(e){}
   if(!G)return;
   famRoster();
   $("whoN").textContent=G.name;
