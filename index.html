@@ -119,6 +119,7 @@ body.hc #cheatbox{background:#111}
 .fcard.me{border-color:var(--brass)}
 .fcard.dead{opacity:.6}
 .fcard.can{cursor:pointer;border-color:var(--moss)}
+.fcard.office b{color:var(--brass)}
 
 /* ── the card for wherever you are standing ── */
 .here{padding:14px 15px 18px;border-top:2px solid var(--brass);background:var(--slate);flex:1 1 auto}
@@ -269,7 +270,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
     <div class="hero">
       <h1>Gild</h1>
       <p>A free city, and what you make of it.</p>
-      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.060</p>
+      <p style="font-size:17px;opacity:.85;margin-top:6px;letter-spacing:.5px" id="vstamp">v7.065</p>
     </div>
     <div id="resumeOnly" style="display:none;padding:20px">
       <button class="btn gold" id="resume" style="width:100%">Resume your saved game</button>
@@ -295,7 +296,7 @@ input[type=text]::placeholder{color:var(--bone-dim);-webkit-text-fill-color:var(
       <div class="pick" id="pick"></div>
       <div class="eyebrow">How it works</div>
       <p class="fine">There are no menus. You walk. Tap the ground to go there, tap a building to go to its door &mdash; when you arrive, that building's business appears below the city. Time runs whether or not you do anything.</p>
-      <p class="fine" style="margin-top:8px">Your workshop turns one good into another. Hire hands at the tavern to work the bench, and carters to fetch the materials and run the finished goods down to the stalls &mdash; your hands never leave the bench, so with no carter the work stops at the door. Everyone draws a wage every day, earned or not.</p>
+      <p class="fine" style="margin-top:8px">Your workshop turns one good into another. Walk up to your workshop door to hire hands for the bench and carters to fetch the materials and run the finished goods down to the stalls &mdash; your hands never leave the bench, so with no carter the work stops at the door. Everyone draws a wage every day, earned or not.</p>
       <p class="fine" style="margin-top:8px">Buy standing at the church and rank at the town hall. Build on open ground inside the walls. Take a wife, raise children, and hand the house to an heir when your time is up &mdash; the city outlasts you. There is a second town down the road that pays differently for the same goods, and a watch that will haul you before the bench if you earn it.</p>
       <button class="btn gold" id="begin" style="width:100%;margin-top:18px">Enter the city</button>
       <p class="fine" style="margin-top:22px;opacity:.75">An original game in the spirit of the medieval town sims — Europa 1400 and The Guild 2. Not affiliated with those games or their makers.</p>
@@ -1675,6 +1676,17 @@ var ITEMS={
   signet:  {n:"A signet ring",   slot:"charm",p:420, rep:0.3, d:"+0.3 standing every day it is worn"}
 };
 var EQ_SLOTS=["hand","body","head","charm1","charm2"];
+/* What is worn is what shows. A weapon in hand is one of the models the
+   watch already carries -- a cudgel reads as the small war-hammer, a
+   falchion and an arming sword both as the one bladed model there is,
+   which is honest for a game this size. A dagger has no model of its own
+   yet and stays a flavour item; the kettle hat and the four charms are
+   too small to read at this scale and are not attempted. Body armour is
+   not a separate model but the coat's own colour: padding, leather or
+   steel over whatever you chose at the tailor. */
+var EQ_WEAPON_MODEL={cudgel:"gild_hammer_small",falchion:"gild_sword",sword:"gild_sword"};
+var EQ_ARMOR_TINT={jack:[214,202,172],jerkin:[112,78,50],mail:[150,152,160]};
+function eqWeaponModel(){ return (G&&G.eq&&G.eq.hand)?(EQ_WEAPON_MODEL[G.eq.hand]||null):null; }
 function invInit(){ if(!G)return; if(!G.inv)G.inv=[]; if(!G.eq)G.eq={}; }
 function invBonus(stat){
   if(!G||!G.eq)return 0; var t=0;
@@ -1688,7 +1700,8 @@ function invSheet(){
   var h='<div class="sub">What you carry</div><h3>Your pack</h3><table class="tbl">';
   var NAMES={hand:"In hand",body:"On your back",head:"On your head",charm1:"A charm",charm2:"Another charm"};
   EQ_SLOTS.forEach(function(sl){ var k=G.eq[sl], it=ITEMS[k];
-    h+='<tr><td class="g">'+NAMES[sl]+'</td><td>'+(it?esc(it.n)+' <span class="fine">'+esc(it.d)+'</span> '+
+    var shows=k&&(sl==="body"?!!EQ_ARMOR_TINT[k]:(sl==="hand"?!!EQ_WEAPON_MODEL[k]:false));
+    h+='<tr><td class="g">'+NAMES[sl]+'</td><td>'+(it?esc(it.n)+' <span class="fine">'+esc(it.d)+(shows?'':' &middot; not shown on you')+'</span> '+
       '<button class="btn sm" onclick="invUnequip(\''+sl+'\')">Take off</button>':'<span class="fine">nothing</span>')+'</td></tr>'; });
   h+='</table>';
   var loose=G.inv.filter(function(k){ for(var sl in G.eq)if(G.eq[sl]===k)return false; return !!ITEMS[k]; });
@@ -2775,7 +2788,7 @@ function newGame(name,trade,look){
     shop:null, shops:null, active:0, homeId:null,
     px:0, pz:7, tx:0, tz:7, moving:false,
     spouse:null, suitor:null, kids:[], expecting:null, matches:[],
-    rivals:rivals, npcs:[], workerNpcs:[], office:null, officeDays:0,
+    rivals:rivals, npcs:[], workerNpcs:[], office:null, officeDays:0, officeHist:[],
     heat:0, over:null, won:false, log:[],
     skin:rnd(0,SKINCOLORS.length-1), guild:false, trial:null,
     scene:"city", camSave:null, record:{convictions:0,last:null},
@@ -2800,7 +2813,7 @@ function newGame(name,trade,look){
   seatCouncil();                 /* the bench exists from the first day */
   buildTown(); seedNpcs(); seedGuards();
   refreshMatches();          /* somebody is always about; you never wait a year */
-  say("Gild","You come through the gate with a little money and no standing at all. The workshop on the west side is yours; the rest of the city is not, yet.\n\nTap the ground to walk. Tap a building to go to its door.");
+  say("Gild","You come through the gate with a little money and no standing at all. The workshop on the west side is yours; the rest of the city is not, yet.\n\nTap the ground to walk. Tap a building to go to its door.\n\nStart at your workshop: take on a hand and a carter at its door, and the bench runs itself. Anything you carry for it is left there when you arrive.");
   layout(); startLoop();
 }
 
@@ -5898,7 +5911,11 @@ function navPlan(g,pad,sx,sz,ex,ez){
   function hh(k){ var dx=Math.abs(k%W-exx), dz=Math.abs(Math.floor(k/W)-ezz); return 1.35*((dx+dz)+(1.4142-2)*Math.min(dx,dz)); }
   ST[s]=sid; G2[s]=0; F[s]=-1; push(s,hh(s));
   var found=false, steps=0;
-  while(hn>0&&steps++<24000){
+  /* the far corners of Gild -- House Marck's door out by the south road,
+     from a house on the north-east wall -- take more than 24,000 cells of
+     searching once grass costs more than street; the search gave up and
+     said there was no way there. It may search the whole grid now. */
+  while(hn>0&&steps++<g.N){
     var cur=pop(); if(CL[cur]===sid)continue; CL[cur]=sid;
     if(cur===e){found=true;break;}
     var cx=cur%W, cz=Math.floor(cur/W), gc=G2[cur];
@@ -5954,11 +5971,22 @@ function navNext(m,tx,tz,pad){
   if(nv.i<nv.pts.length){ var qd=Math.hypot(nv.pts[nv.i][0]-m.x,nv.pts[nv.i][1]-m.z);
     if(nv.bd===undefined||qd<nv.bd-0.03){ nv.bd=qd; nv.np=0; }
     else if(++nv.np>45){ nv.np=0; nv.bd=undefined; if(NAV_PLANS_LEFT>0){ m.nav=null; return navNext(m,tx,tz,pad); } } }
-  while(nv.i<nv.pts.length){ var q=nv.pts[nv.i];
-    if(Math.hypot(q[0]-m.x,q[1]-m.z)<0.6){ nv.i++; nv.bd=undefined;
+  /* A corner counts as reached within 0.6 m -- but the planned line to the
+     next corner starts AT the corner, and a walker who turns early, half a
+     metre off it, can be walking a line that clips a stall or a well the
+     planned one cleared. He only turns early now if his own straight line
+     to the next corner is clear; otherwise he walks on into the corner. */
+  while(nv.i<nv.pts.length){ var q=nv.pts[nv.i], dq=Math.hypot(q[0]-m.x,q[1]-m.z);
+    var nxt=(nv.i+1<nv.pts.length)?nv.pts[nv.i+1]:[tx,tz];
+    if(dq<0.6&&(dq<0.15||navSegClear(m.x,m.z,nxt[0],nxt[1],pad))){ nv.i++; nv.bd=undefined;
       if(nv.i<nv.pts.length){ var q2=nv.pts[nv.i]; nv.leg=Math.hypot(q2[0]-q[0],q2[1]-q[1]); } continue; }
     return q; }
   return [tx,tz];
+}
+function navSegClear(ax,az,bx,bz,pad){
+  var L=Math.hypot(bx-ax,bz-az), n=Math.max(1,Math.ceil(L/0.25));
+  for(var i=1;i<=n;i++){ var t=i/n; if(blockedAt(ax+(bx-ax)*t,az+(bz-az)*t,pad))return false; }
+  return true;
 }
 function walkerAdvance(m){
   var np=navNext(m,m.tx,m.tz);
@@ -13430,7 +13458,8 @@ function glbDrawFigure(op,which,x,z,gy,hx,hz,walkT,gaitAmp,weapon,uid,kid,helm,s
   var dsub=subj||(GLB_PLAYER_DRAW?{garb:(G&&G.garb)||"plain",player:1}:null);
   var PL=dsub&&dsub.player?(GLB_PREVIEW_LOOK||((G&&G.look&&G.look.seed===G.pseed)?G.look:null)):null;
   if(dsub&&!kid){ build=dsub.player?(PL?LOOK_BUILD[PL.build%LOOK_BUILD.length].v:0):glbBuild(uid,isGuard);
-    try{ dress=PL?lookDress(PL):accLook(uid,!!useCh._female,isGuard,dsub.garb); }catch(e){ dress=null; } }
+    try{ dress=PL?lookDress(PL):accLook(uid,!!useCh._female,isGuard,dsub.garb); }catch(e){ dress=null; }
+    if(dress&&dsub.player&&G&&G.eq&&G.eq.body&&EQ_ARMOR_TINT[G.eq.body]){ dress=Object.assign({},dress); dress.up=EQ_ARMOR_TINT[G.eq.body]; } }
   /* Standing people -- a stallholder at his counter, a knot of gossips,
      the congregation, the watch on his post -- were re-placed from their
      pose triangle by triangle every frame although nothing about them had
@@ -15123,7 +15152,7 @@ function glDynamic(){
   if(FIGHT){ var ydx=FIGHT.fx-G.px, ydz=FIGHT.fz-G.pz, ydd=Math.hypot(ydx,ydz)||1;
              lungeX=ydx/ydd*yo; lungeZ=ydz/ydd*yo; }
   var _drewPlayer=false;
-  if(!FIGHT){ GLB_PLAYER_DRAW=true; try{ _drewPlayer=glbDrawFigure(op,((G.look&&G.look.seed===G.pseed&&lookModel(G.look))||glbForRole("walker",G.sex||0,G.pseed||7)),G.px+lungeX,G.pz+lungeZ,pgy,G.hx,G.hz,G.walkT,G.gaitAmp,null,G.pseed||7); }catch(e){} GLB_PLAYER_DRAW=false; }
+  if(!FIGHT){ GLB_PLAYER_DRAW=true; try{ _drewPlayer=glbDrawFigure(op,((G.look&&G.look.seed===G.pseed&&lookModel(G.look))||glbForRole("walker",G.sex||0,G.pseed||7)),G.px+lungeX,G.pz+lungeZ,pgy,G.hx,G.hz,G.walkT,G.gaitAmp,eqWeaponModel(),G.pseed||7); }catch(e){} GLB_PLAYER_DRAW=false; }
   if(!_drewPlayer)
   glPerson(op,G.px+lungeX,G.pz+lungeZ,[196,66,52],true,true,G.skin,G.walkT,G.gaitAmp,G.hx,G.hz,G.sex||0,false,pgy,G.pseed||7,
            0,yst[0],pGarb(),yst[1]);
@@ -16442,7 +16471,76 @@ function step(dt){
   advanceTime(hrs);
   if(Math.floor(G.day/DAYS_PER_SEASON)!==prev){setSeason();buildGeo();}
   var n=nearest();
-  if(n!==here){here=n;drawHere();}
+  if(n!==here){here=n;arriveAt(n);drawHere();}
+}
+/* Walking up to your own workshop is the errand. The materials you are
+   carrying for it go onto the bench, and if you keep no carter to take the
+   finished goods to the stalls, you pick them up on the way out -- no
+   buttons for either. A carter's goods are left for the carter. */
+/* Taking on hands and carters -- the same buttons at the workshop door and
+   at the tavern. New players never found them at the tavern: the place a
+   man goes to hire for his bench is the bench. */
+function crewHtml(){
+  var h="", _cap=handCap();
+    if(G.shop.workers>=_cap)
+      h+='<button class="btn sm" disabled style="opacity:.5">Workshop full &middot; '+G.shop.workers+'/'+_cap+' hands</button>';
+    else
+      h+='<button class="btn gold" onclick="hire()">Hire a hand &middot; '+fmt(120+G.shop.workers*90)+' &middot; '+G.shop.workers+'/'+_cap+'</button>';
+    if(G.shop.workers)h+='<button class="btn sm" onclick="fire()">Let a hand go</button>';
+    var _ccap=carterCap(), _cn=G.shop.carters||0;
+    /* How many carters this bench can actually keep busy. A carter is a
+       ceiling on how much gets moved, not a multiplier -- the shop only
+       ever asks for what the bench can eat, so a carter past that number
+       draws a full wage and moves nothing. Nothing on this panel said so,
+       and the button happily sold you a fourth man for a one-hand bench. */
+    var _trN=TRADES[G.trade], _fH=(G.shop.bId==="shop")?famBenchHands():0;
+    var _spN=_trN?_trN.rate*(1+(G.shop.workers+_fH)*0.72)*(G.shop.lvl*0.85+0.25):0;
+    var _useful=Math.max(1,Math.ceil(Math.max(_spN*(RECIPE+1)*1.15,0.15)/CARTER_HAUL));
+    h+='<p class="fine" style="margin-top:10px">Carters keep the workshop fed and the stalls stocked. Your hands do not leave the bench.</p>';
+    h+='<p class="fine">This bench can keep <b>'+_useful+'</b> carter'+(_useful===1?'':'s')+
+       ' busy. '+(_cn>_useful?'You are paying '+(_cn-_useful)+' to stand idle — let them go, or take on more hands.':
+                 (_cn<_useful?'More hands on the bench will need more carts.':'That is what you have.'))+'</p>';
+    if(_cn>=_ccap)
+      h+='<button class="btn sm" disabled style="opacity:.5">Yard full &middot; '+_cn+'/'+_ccap+' carters</button>';
+    else
+      h+='<button class="btn sm" onclick="hireCarter()">Take on a carter &middot; '+fmt(180+_cn*120)+' &middot; '+_cn+'/'+_ccap+'</button>';
+    if(_cn)h+='<button class="btn sm" onclick="fireCarter()">Let a carter go</button>';
+  return h;
+}
+function playerWorksAt(sh){
+  if(!G||G.over||!sh||G.vig<12)return false;
+  if(inRoom())return G.scene==="shop"&&sh===G.shop;
+  return !!(here&&(here.kind==="shop"||here.kind==="shop2")&&shopAt(here.id)===sh);
+}
+/* hands and carters in two short rows, for the workshop door and inside it */
+function crewButtons(){
+  var h='', cap=handCap(), w=G.shop.workers||0, ccap=carterCap(), cn=G.shop.carters||0;
+  h+='<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0">';
+  h+='<span class="fine" style="min-width:6.5em">Hands '+w+'/'+cap+'</span>';
+  h+=(w<cap)?'<button class="btn sm gold" onclick="hire()">Hire &middot; '+fmt(120+w*90)+'</button>':'<button class="btn sm" disabled style="opacity:.5">Full</button>';
+  if(w)h+='<button class="btn sm" onclick="fire()">Let one go</button>';
+  h+='</div><div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 6px">';
+  h+='<span class="fine" style="min-width:6.5em">Carters '+cn+'/'+ccap+'</span>';
+  h+=(cn<ccap)?'<button class="btn sm gold" onclick="hireCarter()">Take on &middot; '+fmt(180+cn*120)+'</button>':'<button class="btn sm" disabled style="opacity:.5">Full</button>';
+  if(cn)h+='<button class="btn sm" onclick="fireCarter()">Let one go</button>';
+  h+='</div>';
+  if(playerWorksAt(G.shop))h+='<p class="fine">You are at the bench: while you stay you work it as one more hand.</p>';
+  else if(G.vig<12)h+='<p class="fine">Too tired to work the bench. Sleep first.</p>';
+  return h;
+}
+function arriveAt(b){
+  if(!b||!G||G.over)return;
+  if(b.kind!=="shop"&&b.kind!=="shop2")return;
+  var sh=shopAt(b.id)||(G.shops?G.shops[0]:G.shop); if(!sh)return;
+  var tr=TRADES[sh.trade||G.trade]; if(!tr)return;
+  var done=[];
+  var q=G.bag[tr.inG]||0;
+  if(q>0){ G.bag[tr.inG]=0; sh.store_in+=q; done.push("left "+q+" "+GOODS[tr.inG].n.toLowerCase()); }
+  if(!(sh.carters||0)&&sh.store_out>0){
+    var room=G.cap-bagCount(), take=Math.min(sh.store_out,Math.max(0,room));
+    if(take>0){ sh.store_out-=take; G.bag[tr.outG]=(G.bag[tr.outG]||0)+take; done.push("picked up "+take+" "+GOODS[tr.outG].n.toLowerCase()); }
+  }
+  if(done.length)note("At the workshop: "+done.join(", "));
 }
 /* the workshop works whether or not you are standing in it — every path that
    moves the clock must run this, not just the render loop */
@@ -17001,7 +17099,11 @@ function produceOne(hrs,tradeKey){
   /* tuned to the ladder: a well-run house should be able to buy its way to
      Burgomaster in about two hundred and fifty days and spend the rest of a
      life holding the office rather than paying for it */
-  var famH=(G.shop.bId==="shop")?famBenchHands():0;   /* the house's own bench */
+  var famH=(G.shop.bId==="shop")?famBenchHands():0;   
+  /* you at your own bench -- at its door or inside it -- work it as a hand
+     does, for as long as you stay and have the strength; no button */
+  var youH=playerWorksAt(G.shop)?1:0;
+  if(youH){ G.vig=clamp(G.vig-hrs*0.8,0,100); famH+=1; }/* the house's own bench */
   var sp=tr.rate*(1+(G.shop.workers+famH)*0.72)*(G.shop.lvl*0.85+0.25);
   /* hands fetch their own materials and run the finished goods down to the
      stalls — they pay over the odds and sell under them, but you stop carrying.
@@ -17332,7 +17434,7 @@ function newDay(){
   }
   if(G.office==="alderman")G.coin+=90;
   if(G.office==="burgomaster")G.coin+=260;
-  if(G.officeDays>0){G.officeDays--;if(!G.officeDays){note("Your term of office has ended.");G.office=null;}}
+  if(G.officeDays>0){G.officeDays--;if(!G.officeDays){officeHistClose();note("Your term of office has ended.");G.office=null;}}
   marketDay();
   G.rep=clamp(G.rep+((26+G.title*8)-G.rep)*0.05,0,100);
   if(!G.trial&&G.heat>12&&Math.random()<0.15&&G.office!=="burgomaster"){
@@ -17906,6 +18008,14 @@ function famSheet(pickSlot){
   var pick=(pickSlot!==undefined&&pickSlot!==null);
   var h='<div class="sub">'+SEASONS[Math.floor(G.day/DAYS_PER_SEASON)%4]+" &middot; day "+(G.day+1)+'</div>';
   h+='<h3>'+(pick?"Who takes the place?":"House "+esc(famHouse()||G.name.split(" ")[0]))+'</h3>';
+  if(!pick&&G.officeHist&&G.officeHist.length){
+    h+='<div class="eyebrow" style="margin-top:10px">Offices held</div><table class="tbl">';
+    var hist=G.officeHist.slice().reverse();
+    for(var oh=0;oh<hist.length;oh++){ var rec=hist[oh], onow=(rec.to===undefined);
+      h+='<tr><td colspan="2"><b>'+esc(rec.office.charAt(0).toUpperCase()+rec.office.slice(1))+'</b> &middot; '+esc(rec.name)+
+         '<br><span class="fine">'+(onow?'since day '+(rec.from+1)+', sitting now':'day '+(rec.from+1)+' to '+(rec.to+1))+'</span></td></tr>'; }
+    h+='</table>';
+  }
   if(pick)h+='<p class="fine">Tap one of the family for the empty place. Only the living, of age and in the town.</p>';
   else h+='<p class="fine">Tap anyone of age to take over as them. The four at the top of the town are who you can be at a tap.</p>';
   var gens={},maxG=0,i,p;
@@ -17923,9 +18033,10 @@ function famSheet(pickSlot){
     for(i=0;i<row.length;i++){
       p=row[i];
       var can=(pick?famEligible(p):(famEligible(p)&&p.id!==G.me));
-      h+='<div class="fcard'+(p.id===G.me?" me":"")+(p.alive?"":" dead")+(can?" can":"")+'" onclick="famTap('+p.id+','+(pick?pickSlot:-1)+')">'+
+      var holdsOffice=(G.office&&p.id===G.me);
+      h+='<div class="fcard'+(p.id===G.me?" me":"")+(p.alive?"":" dead")+(can?" can":"")+(holdsOffice?" office":"")+'" onclick="famTap('+p.id+','+(pick?pickSlot:-1)+')">'+
          '<canvas id="ft'+p.id+'" width="64" height="64"></canvas>'+
-         '<b>'+esc(p.name)+'</b><span>'+famLine(p)+'</span></div>';
+         '<b>'+esc(p.name)+(holdsOffice?' &middot; '+esc(G.office):'')+'</b><span>'+famLine(p)+'</span></div>';
     }
     h+='</div>';
   }
@@ -17991,6 +18102,7 @@ function newLine(carried){
   G.suitor=null; G.expecting=null; G.matches=[];
   famInit(G.name,G.gen);     /* a new roll with one name on it */
   refreshMatches();          /* somebody is always about; you never wait a year */
+  officeHistClose();
   G.office=null; G.officeDays=0;
   G.thugs=0; G.thugLoyal=0; G.thugJob=null; G.thugNpcs=[];
   G.thieves=0; G.thiefNpcs=[]; G.prisoners=[];
@@ -18102,6 +18214,7 @@ function die(violent,how){
   /* you go on as the heir, wherever the heir was standing */
   famTakeOver(heir,false);
   G.vig=100;G.suitor=null;G.matches=[];refreshMatches();
+  officeHistClose();
   G.office=null;G.officeDays=0;
   var duty=Math.round(G.coin*0.15);G.coin-=duty;
   G.rep=clamp(G.rep*0.85+6,0,100);
@@ -18229,6 +18342,7 @@ function sell(g){
   G.coin+=v;G.bag[g]=0;
   note("Sold "+q+" "+GOODS[g].n+" for "+v);layout();
 }
+function sellAll(){ for(var g in GOODS)if(G.bag[g]>0)sell(g); }
 function deposit(){
   var tr=TRADES[G.trade],q=G.bag[tr.inG];
   if(!q)return say("Nothing to leave","Buy "+GOODS[tr.inG].n+" at the market first.");
@@ -19396,6 +19510,11 @@ function assizeCap(g){
 function tollRate(){
   return (G.motions&&G.motions.toll)?G.motions.toll:0;
 }
+function officeHistClose(){
+  if(!G.officeHist||!G.officeHist.length)return;
+  var last=G.officeHist[G.officeHist.length-1];
+  if(last.to===undefined)last.to=G.day;
+}
 function standFor(id){
   var fee=id==="alderman"?900:3200;
   if(G.coin<fee)return say("Not enough coin","Standing costs "+fmt(fee)+" in fees and hospitality.");
@@ -19415,6 +19534,8 @@ function standFor(id){
     meetingStart("election",null,need,function(forMe,against,carried){
       if(carried){
         G.office=id;G.officeDays=DAYS_PER_YEAR;G.rep=clamp(G.rep+6,0,100);
+        if(!G.officeHist)G.officeHist=[];
+        G.officeHist.push({office:id,name:G.name,gen:G.gen,from:G.day});
         note("Elected "+id);
         say("Elected","It was read out and it was yours, "+forMe+" to "+against+". "+
           (id==="alderman"?"A stipend of 90 a day.":"A stipend of 260 a day, and nobody brings a burgomaster to trial."));
@@ -20186,6 +20307,9 @@ function drawHere(){
       rh+='<tr><td class="g">'+esc(GOODS[t2.outG].n)+' ready</td><td>'+(G.shop.store_out||0)+'</td></tr>';
       rh+='<tr><td class="g">Workshop</td><td>level '+(G.shop.lvl||1)+'</td></tr>';
       rh+='</table>';
+      rh+=crewButtons();
+      rh+='<button class="btn sm" onclick="collect()">Collect '+esc(GOODS[t2.outG].n)+'</button>';
+      if(G.shop.lvl<3)rh+='<button class="btn sm" onclick="upgradeShop()">Enlarge &middot; '+fmt([0,1800,5200][G.shop.lvl])+'</button>';
     } else if(RK==="church"){
       rh+='<h2>Inside</h2>';
       rh+='<p>Cold stone, candle smoke, and the east window throwing colour across the floor.</p>';
@@ -20359,6 +20483,7 @@ function drawHere(){
         G.shops.map(function(sp){return TRADES[sp.trade||G.trade].n;}).join(", ")+'</p>';
     }
     h+='<button class="btn gold" onclick="enterRoom(\'shop\')">Step inside</button>';
+    h+=crewButtons();
     h+='<p>'+tr.blurb+'</p><table class="tbl">';
     h+='<tr><td class="g">'+GOODS[tr.inG].n+' waiting</td><td>'+G.shop.store_in+'</td></tr>';
     h+='<tr><td class="g">'+GOODS[tr.outG].n+' ready</td><td>'+G.shop.store_out+'</td></tr>';
@@ -20373,7 +20498,6 @@ function drawHere(){
     h+='<div class="bar"><i style="width:'+Math.round(G.shop.prog*100)+'%"></i></div>';
     h+='<button class="btn" onclick="deposit()">Leave '+GOODS[tr.inG].n+'</button>';
     h+='<button class="btn gold" onclick="collect()">Collect '+GOODS[tr.outG].n+'</button>';
-    h+='<button class="btn" onclick="workShift()">Work a shift</button>';
     if(G.shop.lvl<3)h+='<button class="btn sm" onclick="upgradeShop()">Enlarge &middot; '+fmt([0,1800,5200][G.shop.lvl])+'</button>';
   } else if(here.kind==="market"){
     h='<div class="sub">'+esc(TOWNS[playerTown()].n)+' &middot; market square</div><h2>Stalls and shouting</h2>';
@@ -20390,6 +20514,8 @@ function drawHere(){
     h+='<button class="btn sm" onclick="buyTorch()">Buy a torch &middot; 14'+(G.torches?' &middot; carrying '+G.torches:'')+'</button>';
     if(canLabour())
       h+='<button class="btn gold" onclick="dayLabour()">Take a day\'s labour &middot; '+fmt(labourPay())+'</button>';
+    var _kinds=0; for(g in GOODS)if(G.bag[g]>0)_kinds++;
+    if(_kinds>1)h+='<button class="btn gold" onclick="sellAll()">Sell everything you carry</button>';
     for(g in GOODS)if(G.bag[g]>0)h+='<button class="btn" onclick="sell(\''+g+'\')">Sell '+G.bag[g]+' '+GOODS[g].n+'</button>';
   } else if(here.kind==="den"){
     /* An actual building you can walk up to now, so it needs its own
@@ -20423,30 +20549,7 @@ function drawHere(){
       h+='</table>';
       h+='<p class="fine">A better house takes more winning, and brings more with them. Leave one alone too long and they are spoken for.</p>';
     }
-    var _cap=handCap();
-    if(G.shop.workers>=_cap)
-      h+='<button class="btn sm" disabled style="opacity:.5">Workshop full &middot; '+G.shop.workers+'/'+_cap+' hands</button>';
-    else
-      h+='<button class="btn gold" onclick="hire()">Hire a hand &middot; '+fmt(120+G.shop.workers*90)+' &middot; '+G.shop.workers+'/'+_cap+'</button>';
-    if(G.shop.workers)h+='<button class="btn sm" onclick="fire()">Let a hand go</button>';
-    var _ccap=carterCap(), _cn=G.shop.carters||0;
-    /* How many carters this bench can actually keep busy. A carter is a
-       ceiling on how much gets moved, not a multiplier -- the shop only
-       ever asks for what the bench can eat, so a carter past that number
-       draws a full wage and moves nothing. Nothing on this panel said so,
-       and the button happily sold you a fourth man for a one-hand bench. */
-    var _trN=TRADES[G.trade], _fH=(G.shop.bId==="shop")?famBenchHands():0;
-    var _spN=_trN?_trN.rate*(1+(G.shop.workers+_fH)*0.72)*(G.shop.lvl*0.85+0.25):0;
-    var _useful=Math.max(1,Math.ceil(Math.max(_spN*(RECIPE+1)*1.15,0.15)/CARTER_HAUL));
-    h+='<p class="fine" style="margin-top:10px">Carters keep the workshop fed and the stalls stocked. Your hands do not leave the bench.</p>';
-    h+='<p class="fine">This bench can keep <b>'+_useful+'</b> carter'+(_useful===1?'':'s')+
-       ' busy. '+(_cn>_useful?'You are paying '+(_cn-_useful)+' to stand idle — let them go, or take on more hands.':
-                 (_cn<_useful?'More hands on the bench will need more carts.':'That is what you have.'))+'</p>';
-    if(_cn>=_ccap)
-      h+='<button class="btn sm" disabled style="opacity:.5">Yard full &middot; '+_cn+'/'+_ccap+' carters</button>';
-    else
-      h+='<button class="btn sm" onclick="hireCarter()">Take on a carter &middot; '+fmt(180+_cn*120)+' &middot; '+_cn+'/'+_ccap+'</button>';
-    if(_cn)h+='<button class="btn sm" onclick="fireCarter()">Let a carter go</button>';
+    h+='<div class="eyebrow" style="margin-top:12px">Hands and carters</div><p class="fine">Taken on here or at your own workshop door, whichever is nearer.</p>'+crewHtml();
     h+='<p class="fine" style="margin-top:10px">Carters drink here too. You carry '+G.cap+
        ' &middot; '+esc(CARTS[G.cart||0].n)+'.</p>';
     for(var ci2=(G.cart||0)+1;ci2<CARTS.length;ci2++){
@@ -21731,6 +21834,7 @@ $("resume").onclick=function(){
     if(!G.mkt3){G.mkt3={};for(var _g3 in GOODS)G.mkt3[_g3]=tannBase(_g3);}
     /* a save from before Tannholt: the village is peopled on arrival */
     if(G.pop0&&G.pop0.length<3){ G.pop0.push(24); for(var _nc=0;_nc<30;_nc++)newcomers(true); }
+    if(!G.officeHist)G.officeHist=G.office?[{office:G.office,name:G.name,gen:G.gen,from:Math.max(0,G.day-(DAYS_PER_YEAR-(G.officeDays||0)))}]:[];
     if(G.cart===undefined){G.cart=0;recalcCap();}
     if(!G.road)G.road=[];
     if(!G.robbers)G.robbers=[];
